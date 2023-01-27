@@ -29,7 +29,7 @@ vars.Add(EnumVariable('debug', 'Set debug level (0 = release version)', '0',
                                  allowed_values=('0', '1', '2'),
                                  ignorecase=2))
 vars.Add(EnumVariable('device', 'Set target device', 'none',
-                                 allowed_values=('none', 'pc-windows', 'pc-linux', 'arm-linux', 'gp2x', 'pandora', 'pc-linux-llasm', 'pandora-llasm', 'pc64-linux-llasm', 'arm64-linux-llasm'),
+                                 allowed_values=('none', 'pc-windows', 'pc-linux', 'arm-linux', 'gp2x', 'pandora', 'pc-linux-llasm', 'pandora-llasm', 'pc64-linux-llasm', 'arm64-linux-llasm', 'web-llasm'),
                                  ignorecase=2))
 vars.Add(EnumVariable('sdl2', 'Use SDL2 instead of SDL? (1 = yes)', '0',
                                  allowed_values=('0', '1'),
@@ -58,6 +58,7 @@ Help(vars.GenerateHelpText(env))
 llasm_version = False
 llasm_params = ""
 llvm_params = ""
+program_name = "SR-Intro"
 
 if device.endswith("-llasm"):
     llasm_version = True
@@ -172,6 +173,21 @@ elif device == 'pandora':
         llvm_params = '-mtriple=armv7a-unknown-linux-eabi -mcpu=cortex-a8'
     # see arm/armconf.inc for explanation of these options (and others)
     env.Append(ASFLAGS = ' --defsym USE_R9=1 --defsym ALLOW_UNALIGNED_MEMORY_ACCESS=1')
+elif device == 'web':
+    if sdl2 > 0:
+        env = Environment(CCFLAGS      = '-gsource-map -m32 -O2 -Wall -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sUSE_SDL=2 -pthread -sUSE_PTHREADS=1',
+                          LINKFLAGS    = '-gsource-map --source-map-base ./ --preload-file data@/ -m32 -Wl -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=8 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
+                          LIBS         = ['SDL2_mixer', 'SDL2-mt', 'pthread', 'dl']
+                         )
+    else:
+        env = Environment(CCFLAGS      = '-gsource-map -m32 -O2 -Wall -DALLOW_OPENGL -sUSE_SDL_MIXER=1 -sUSE_SDL=1 -pthread -sUSE_PTHREADS=1 -sOFFSCREEN_FRAMEBUFFER -sOFFSCREENCANVAS_SUPPORT',
+                          LINKFLAGS    = '-gsource-map --source-map-base ./ --preload-file data@/ -m32 -Wl -pthread -sUSE_PTHREADS=1 -sPROXY_TO_PTHREAD -sPTHREAD_POOL_SIZE=8 -sOFFSCREEN_FRAMEBUFFER -sOFFSCREENCANVAS_SUPPORT',
+                          LIBS         = ['SDL_mixer', 'SDL', 'pthread', 'dl', 'GL']
+                         )
+    env['CC'] = '/root/emsdk/upstream/emscripten/emcc'
+    llasm_params = '-no-tail-calls'
+    llvm_params = '-march=wasm32'
+    program_name += '.html'
 
 def get_compiler_version(compiler_path, env_path):
     process = subprocess.Popen([compiler_path, '-dumpversion'], stdout=subprocess.PIPE, env={"PATH": env_path})
@@ -196,7 +212,7 @@ def is_version_ge(version, comparand):
             return True
     return True
 
-if not clean:
+if not clean and device != 'web':
     compiler_version = get_compiler_version(env['CC'], env['ENV']['PATH'])
     if is_version_ge(compiler_version, [3, 4]):
         env.Append(CCFLAGS = ' -fno-PIE')
@@ -229,4 +245,4 @@ else:
     arch_objs = SConscript('arm/SConscript', exports='device env')
 
 
-env.Program('SR-Intro', Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs)
+env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs)

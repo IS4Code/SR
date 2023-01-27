@@ -37,6 +37,9 @@
     #include <SDL/SDL_version.h>
     #include <SDL/SDL_mixer.h>
 #endif
+#if __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 #include "Game_defs.h"
 
 #define DEFINE_VARIABLES
@@ -1421,18 +1424,363 @@ static void Game_Initialize2(void)
 #endif
 }
 
+static SDL_Thread *MainThread;
+static SDL_Thread *FlipThread;
+static SDL_Thread *TimerThread;
+static SDL_Event event;
+//static uint32_t AppMouseFocus;
+static uint32_t AppInputFocus;
+static uint32_t AppActive;
+static int FlipActive, CreateAfterFlip, DestroyAfterFlip;
+
+static void Game_Event_Tick(void)
+{
+    if (!SDL_WaitEvent(&event))
+    {
+        Thread_Exited = 1;
+        return;
+    }
+    if (!Handle_Input_Event(&event))
+    switch(event.type)
+    {
+    #ifdef USE_SDL2
+        case SDL_WINDOWEVENT:
+            switch (event.window.event)
+            {
+                case SDL_WINDOWEVENT_ENTER:
+                    //AppMouseFocus = 1;
+                    break;
+                case SDL_WINDOWEVENT_LEAVE:
+                    //AppMouseFocus = 0;
+                    break;
+                case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    AppInputFocus = 1;
+                    break;
+                case SDL_WINDOWEVENT_FOCUS_LOST:
+                    AppInputFocus = 0;
+                    break;
+                case SDL_WINDOWEVENT_MINIMIZED:
+                    AppActive = 0;
+                    break;
+                case SDL_WINDOWEVENT_MAXIMIZED:
+                case SDL_WINDOWEVENT_RESTORED:
+                    AppActive = 1;
+                    break;
+                //case SDL_WINDOWEVENT_CLOSE:
+                // todo: ?
+            }
+
+            break;
+            // case SDL_WINDOWEVENT:
+    #else
+        case SDL_ACTIVEEVENT:
+            //if (event.active.state & SDL_APPMOUSEFOCUS)
+            //{
+            //    AppMouseFocus = event.active.gain;
+            //}
+            if (event.active.state & SDL_APPINPUTFOCUS)
+            {
+                AppInputFocus = event.active.gain;
+            }
+            if (event.active.state & SDL_APPACTIVE)
+            {
+                AppActive = event.active.gain;
+            }
+
+            break;
+            // case SDL_ACTIVEEVENT:
+    #endif
+
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            if (
+            #ifdef USE_SDL2
+                !event.key.repeat &&
+                Game_Window != NULL
+            #else
+                Game_Screen != NULL
+            #endif
+                && AppActive && AppInputFocus)
+            {
+                if ( ( (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1) ) == Game_KQueueRead )
+                {
+#if defined(__DEBUG__)
+                    printf("keyboard event queue overflow\n");
+#endif
+                }
+                else
+                {
+                    Game_EventKQueue[Game_KQueueWrite] = event;
+
+                    Game_KQueueWrite = (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1);
+                }
+            }
+
+            break;
+            // case SDL_KEYDOWN, SDL_KEYUP:
+        case SDL_QUIT:
+            /* todo: question */
+
+            if (Thread_Exit) exit(1);
+
+            Thread_Exit = 1;
+
+            SDL_SemPost(Game_FlipSem);
+
+            SDL_WaitThread(FlipThread, NULL);
+
+            SDL_WaitThread(MainThread, NULL);
+
+            SDL_WaitThread(TimerThread, NULL);
+
+            break;
+            // case SDL_QUIT:
+        case SDL_USEREVENT:
+            switch (event.user.code)
+            {
+                case EC_DISPLAY_CREATE:
+                    if (FlipActive)
+                    {
+                        CreateAfterFlip = 1;
+                    }
+                    else
+                    {
+                        Game_Display_Create();
+                    }
+
+                    break;
+                    // case EC_DISPLAY_CREATE:
+
+                case EC_DISPLAY_DESTROY:
+                    if (FlipActive)
+                    {
+                        DestroyAfterFlip = 1;
+                    }
+                    else
+                    {
+                        Game_Display_Destroy(1);
+                    }
+
+                    break;
+                    // case EC_DISPLAY_DESTROY:
+
+                case EC_DISPLAY_FLIP_START:
+                    if (!FlipActive &&
+                    #ifdef USE_SDL2
+                        Game_Window != NULL
+                    #else
+                        Game_Screen != NULL
+                    #endif
+                        )
+                    {
+                        FlipActive = 1;
+
+                        /* ??? */
+/*								SDL_LockSurface(Game_Screen);*/
+
+                        SDL_SemPost(Game_FlipSem);
+                    }
+
+                    break;
+                    // case EC_DISPLAY_FLIP_START:
+
+                case EC_DISPLAY_FLIP_FINISH:
+                    if (FlipActive)
+                    {
+                    #if defined(USE_SDL2)
+                        if (Game_DisplayActive)
+                        {
+                            if (Scaler_ScaleTextureData)
+                            {
+                                SDL_UpdateTexture(Game_Texture[Game_CurrentTexture], NULL, Game_ScaledTextureData, Scaler_ScaleFactor * Render_Width * Display_Bitsperpixel / 8);
+                            }
+                            else
+                            {
+                                SDL_UpdateTexture(Game_Texture[Game_CurrentTexture], NULL, Game_TextureData, Render_Width * Display_Bitsperpixel / 8);
+                            }
+
+                            if (Scaler_ScaleTexture)
+                            {
+                                SDL_SetRenderTarget(Game_Renderer, Game_ScaledTexture[Game_CurrentTexture]);
+                                SDL_RenderCopy(Game_Renderer, Game_Texture[Game_CurrentTexture], NULL, NULL);
+
+                                SDL_SetRenderTarget(Game_Renderer, NULL);
+                                SDL_RenderCopy(Game_Renderer, Game_ScaledTexture[Game_CurrentTexture], NULL, NULL);
+                            }
+                            else
+                            {
+                                SDL_RenderCopy(Game_Renderer, Game_Texture[Game_CurrentTexture], NULL, NULL);
+                            }
+                            SDL_RenderPresent(Game_Renderer);
+
+                            Game_CurrentTexture++;
+                            if (Game_CurrentTexture > 2)
+                            {
+                                Game_CurrentTexture = 0;
+                            }
+                        }
+                    #elif defined(ALLOW_OPENGL)
+                        if (Game_UseOpenGL && Game_DisplayActive)
+                        {
+                            glBindTexture(GL_TEXTURE_2D, Game_GLTexture[Game_CurrentTexture]);
+
+                            if (Scaler_ScaleTextureData)
+                            {
+                                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Scaler_ScaleFactor * Render_Width, Scaler_ScaleFactor * Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_ScaledTextureData);
+                            }
+                            else
+                            {
+                                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Render_Width, Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_TextureData);
+                            }
+
+                            static const GLfloat QuadVertices[2*4] = {
+                                -1.0f,  1.0f,
+                                 1.0f,  1.0f,
+                                 1.0f, -1.0f,
+                                -1.0f, -1.0f,
+                            };
+                            static const GLfloat QuadTexCoords[2*4] = {
+                                0.0f, 0.0f,
+                                1.0f, 0.0f,
+                                1.0f, 1.0f,
+                                0.0f, 1.0f
+                            };
+                            static const GLfloat QuadScaleTexCoords[2*4] = {
+                                0.0f, 1.0f,
+                                1.0f, 1.0f,
+                                1.0f, 0.0f,
+                                0.0f, 0.0f,
+                            };
+
+                            glEnable(GL_TEXTURE_2D);
+
+                            glEnableClientState(GL_VERTEX_ARRAY);
+                            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+                            if (Scaler_ScaleTexture)
+                            {
+                                gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, Game_GLFramebuffer[Game_CurrentTexture]);
+
+                                glViewport(0, 0, Scaler_ScaledTextureWidth, Scaler_ScaledTextureHeight);
+
+                                glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
+                                glTexCoordPointer(2, GL_FLOAT, 0, &(QuadScaleTexCoords[0]));
+                                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                                gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+
+                                glViewport(Picture_Position_UL_X, Picture_Position_UL_Y, Picture_Width, Picture_Height);
+
+                                glBindTexture(GL_TEXTURE_2D, Game_GLScaledTexture[Game_CurrentTexture]);
+                            }
+
+                            glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
+                            glTexCoordPointer(2, GL_FLOAT, 0, &(QuadTexCoords[0]));
+                            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+                            glDisableClientState(GL_VERTEX_ARRAY);
+
+                            glDisable(GL_TEXTURE_2D);
+
+                            SDL_GL_SwapBuffers();
+
+                            Game_CurrentTexture++;
+                            if (Game_CurrentTexture > 2)
+                            {
+                                Game_CurrentTexture = 0;
+                            }
+                        }
+                    #endif
+
+                        /* ??? */
+/*								SDL_UnlockSurface(Game_Screen);
+                        SDL_Flip(Game_Screen);*/
+
+                        FlipActive = 0;
+
+                        if (DestroyAfterFlip)
+                        {
+                            Game_Display_Destroy(1);
+                            DestroyAfterFlip = 0;
+                        }
+
+                        if (CreateAfterFlip)
+                        {
+                            Game_Display_Create();
+                            CreateAfterFlip = 0;
+                        }
+                    }
+
+                    break;
+                    // case EC_DISPLAY_FLIP_FINISH:
+                case EC_PROGRAM_QUIT:
+                    if (Thread_Exit) exit(1);
+
+                    Thread_Exit = 1;
+
+                    SDL_SemPost(Game_FlipSem);
+
+                    SDL_WaitThread(FlipThread, NULL);
+
+                    SDL_WaitThread(MainThread, NULL);
+
+                    SDL_WaitThread(TimerThread, NULL);
+
+                    break;
+                    // case EC_PROGRAM_QUIT:
+                case EC_MOUSE_MOVE:
+                    {
+                        int mousex, mousey;
+
+                        SDL_GetMouseState(&mousex, &mousey);
+                    #ifdef USE_SDL2
+                        SDL_WarpMouseInWindow(Game_Window, mousex + (intptr_t) event.user.data1, mousey + (intptr_t) event.user.data2);
+                    #else
+                        SDL_WarpMouse(mousex + (intptr_t) event.user.data1, mousey + (intptr_t) event.user.data2);
+                    #endif
+                    }
+                    break;
+                case EC_MOUSE_SET:
+                    {
+                    #ifdef USE_SDL2
+                        SDL_WarpMouseInWindow(Game_Window, (intptr_t) event.user.data1, (intptr_t) event.user.data2);
+                    #else
+                        SDL_WarpMouse((intptr_t) event.user.data1, (intptr_t) event.user.data2);
+                    #endif
+                    }
+                    break;
+                //senquack - need this to allow macros to behave in battlescape
+                case EC_DELAY:
+                    SDL_Delay((intptr_t) event.user.data1);
+                    break;
+                    // case EC_DELAY:
+
+                case EC_SET_VOLUME:
+//senquack - SOUND STUFF
+                    if (Game_Sound)
+                    {
+                        // Sound sample relative volume now configurable:
+                        Mix_Volume(-1, (Game_AudioSampleVolume * Game_AudioMasterVolume) >> 7);
+                    }
+
+                    if (Game_Music)
+                    {
+                        Game_SetMusicVolume();
+                    }
+                    break;
+            }
+
+            break;
+            // case SDL_USEREVENT:
+        default:
+            Handle_Input_Event2(&event);
+            break;
+    } // switch(event.type)
+}
+
 static void Game_Event_Loop(void)
 {
-    SDL_Thread *MainThread;
-    SDL_Thread *FlipThread;
-    SDL_Thread *TimerThread;
-    SDL_Event event;
-    //uint32_t AppMouseFocus;
-    uint32_t AppInputFocus;
-    uint32_t AppActive;
-    int FlipActive, CreateAfterFlip, DestroyAfterFlip;
-
-
     TimerThread = SDL_CreateThread(
         Game_TimerThread,
 #ifdef USE_SDL2
@@ -1510,347 +1858,14 @@ static void Game_Event_Loop(void)
     CreateAfterFlip = 0;
     DestroyAfterFlip = 0;
 
-    while (!Thread_Exited && SDL_WaitEvent(&event))
+#if __EMSCRIPTEN__
+    emscripten_set_main_loop(Game_Event_Tick, -1, 1);
+#else
+    while (!Thread_Exited)
     {
-        if (!Handle_Input_Event(&event))
-        switch(event.type)
-        {
-        #ifdef USE_SDL2
-            case SDL_WINDOWEVENT:
-                switch (event.window.event)
-                {
-                    case SDL_WINDOWEVENT_ENTER:
-                        //AppMouseFocus = 1;
-                        break;
-                    case SDL_WINDOWEVENT_LEAVE:
-                        //AppMouseFocus = 0;
-                        break;
-                    case SDL_WINDOWEVENT_FOCUS_GAINED:
-                        AppInputFocus = 1;
-                        break;
-                    case SDL_WINDOWEVENT_FOCUS_LOST:
-                        AppInputFocus = 0;
-                        break;
-                    case SDL_WINDOWEVENT_MINIMIZED:
-                        AppActive = 0;
-                        break;
-                    case SDL_WINDOWEVENT_MAXIMIZED:
-                    case SDL_WINDOWEVENT_RESTORED:
-                        AppActive = 1;
-                        break;
-                    //case SDL_WINDOWEVENT_CLOSE:
-                    // todo: ?
-                }
-
-                break;
-                // case SDL_WINDOWEVENT:
-        #else
-            case SDL_ACTIVEEVENT:
-                //if (event.active.state & SDL_APPMOUSEFOCUS)
-                //{
-                //    AppMouseFocus = event.active.gain;
-                //}
-                if (event.active.state & SDL_APPINPUTFOCUS)
-                {
-                    AppInputFocus = event.active.gain;
-                }
-                if (event.active.state & SDL_APPACTIVE)
-                {
-                    AppActive = event.active.gain;
-                }
-
-                break;
-                // case SDL_ACTIVEEVENT:
-        #endif
-
-            case SDL_KEYDOWN:
-            case SDL_KEYUP:
-                if (
-                #ifdef USE_SDL2
-                    !event.key.repeat &&
-                    Game_Window != NULL
-                #else
-                    Game_Screen != NULL
-                #endif
-                    && AppActive && AppInputFocus)
-                {
-                    if ( ( (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1) ) == Game_KQueueRead )
-                    {
-#if defined(__DEBUG__)
-                        printf("keyboard event queue overflow\n");
-#endif
-                    }
-                    else
-                    {
-                        Game_EventKQueue[Game_KQueueWrite] = event;
-
-                        Game_KQueueWrite = (Game_KQueueWrite + 1) & (GAME_KQUEUE_LENGTH - 1);
-                    }
-                }
-
-                break;
-                // case SDL_KEYDOWN, SDL_KEYUP:
-            case SDL_QUIT:
-                /* todo: question */
-
-                if (Thread_Exit) exit(1);
-
-                Thread_Exit = 1;
-
-                SDL_SemPost(Game_FlipSem);
-
-                SDL_WaitThread(FlipThread, NULL);
-
-                SDL_WaitThread(MainThread, NULL);
-
-                SDL_WaitThread(TimerThread, NULL);
-
-                break;
-                // case SDL_QUIT:
-            case SDL_USEREVENT:
-                switch (event.user.code)
-                {
-                    case EC_DISPLAY_CREATE:
-                        if (FlipActive)
-                        {
-                            CreateAfterFlip = 1;
-                        }
-                        else
-                        {
-                            Game_Display_Create();
-                        }
-
-                        break;
-                        // case EC_DISPLAY_CREATE:
-
-                    case EC_DISPLAY_DESTROY:
-                        if (FlipActive)
-                        {
-                            DestroyAfterFlip = 1;
-                        }
-                        else
-                        {
-                            Game_Display_Destroy(1);
-                        }
-
-                        break;
-                        // case EC_DISPLAY_DESTROY:
-
-                    case EC_DISPLAY_FLIP_START:
-                        if (!FlipActive &&
-                        #ifdef USE_SDL2
-                            Game_Window != NULL
-                        #else
-                            Game_Screen != NULL
-                        #endif
-                            )
-                        {
-                            FlipActive = 1;
-
-                            /* ??? */
-/*								SDL_LockSurface(Game_Screen);*/
-
-                            SDL_SemPost(Game_FlipSem);
-                        }
-
-                        break;
-                        // case EC_DISPLAY_FLIP_START:
-
-                    case EC_DISPLAY_FLIP_FINISH:
-                        if (FlipActive)
-                        {
-                        #if defined(USE_SDL2)
-                            if (Game_DisplayActive)
-                            {
-                                if (Scaler_ScaleTextureData)
-                                {
-                                    SDL_UpdateTexture(Game_Texture[Game_CurrentTexture], NULL, Game_ScaledTextureData, Scaler_ScaleFactor * Render_Width * Display_Bitsperpixel / 8);
-                                }
-                                else
-                                {
-                                    SDL_UpdateTexture(Game_Texture[Game_CurrentTexture], NULL, Game_TextureData, Render_Width * Display_Bitsperpixel / 8);
-                                }
-
-                                if (Scaler_ScaleTexture)
-                                {
-                                    SDL_SetRenderTarget(Game_Renderer, Game_ScaledTexture[Game_CurrentTexture]);
-                                    SDL_RenderCopy(Game_Renderer, Game_Texture[Game_CurrentTexture], NULL, NULL);
-
-                                    SDL_SetRenderTarget(Game_Renderer, NULL);
-                                    SDL_RenderCopy(Game_Renderer, Game_ScaledTexture[Game_CurrentTexture], NULL, NULL);
-                                }
-                                else
-                                {
-                                    SDL_RenderCopy(Game_Renderer, Game_Texture[Game_CurrentTexture], NULL, NULL);
-                                }
-                                SDL_RenderPresent(Game_Renderer);
-
-                                Game_CurrentTexture++;
-                                if (Game_CurrentTexture > 2)
-                                {
-                                    Game_CurrentTexture = 0;
-                                }
-                            }
-                        #elif defined(ALLOW_OPENGL)
-                            if (Game_UseOpenGL && Game_DisplayActive)
-                            {
-                                glBindTexture(GL_TEXTURE_2D, Game_GLTexture[Game_CurrentTexture]);
-
-                                if (Scaler_ScaleTextureData)
-                                {
-                                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Scaler_ScaleFactor * Render_Width, Scaler_ScaleFactor * Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_ScaledTextureData);
-                                }
-                                else
-                                {
-                                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Render_Width, Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_TextureData);
-                                }
-
-                                static const GLfloat QuadVertices[2*4] = {
-                                    -1.0f,  1.0f,
-                                     1.0f,  1.0f,
-                                     1.0f, -1.0f,
-                                    -1.0f, -1.0f,
-                                };
-                                static const GLfloat QuadTexCoords[2*4] = {
-                                    0.0f, 0.0f,
-                                    1.0f, 0.0f,
-                                    1.0f, 1.0f,
-                                    0.0f, 1.0f
-                                };
-                                static const GLfloat QuadScaleTexCoords[2*4] = {
-                                    0.0f, 1.0f,
-                                    1.0f, 1.0f,
-                                    1.0f, 0.0f,
-                                    0.0f, 0.0f,
-                                };
-
-                                glEnable(GL_TEXTURE_2D);
-
-                                glEnableClientState(GL_VERTEX_ARRAY);
-                                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-                                if (Scaler_ScaleTexture)
-                                {
-                                    gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, Game_GLFramebuffer[Game_CurrentTexture]);
-
-                                    glViewport(0, 0, Scaler_ScaledTextureWidth, Scaler_ScaledTextureHeight);
-
-                                    glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
-                                    glTexCoordPointer(2, GL_FLOAT, 0, &(QuadScaleTexCoords[0]));
-                                    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-                                    gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-
-                                    glViewport(Picture_Position_UL_X, Picture_Position_UL_Y, Picture_Width, Picture_Height);
-
-                                    glBindTexture(GL_TEXTURE_2D, Game_GLScaledTexture[Game_CurrentTexture]);
-                                }
-
-                                glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
-                                glTexCoordPointer(2, GL_FLOAT, 0, &(QuadTexCoords[0]));
-                                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-                                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-                                glDisableClientState(GL_VERTEX_ARRAY);
-
-                                glDisable(GL_TEXTURE_2D);
-
-                                SDL_GL_SwapBuffers();
-
-                                Game_CurrentTexture++;
-                                if (Game_CurrentTexture > 2)
-                                {
-                                    Game_CurrentTexture = 0;
-                                }
-                            }
-                        #endif
-
-                            /* ??? */
-/*								SDL_UnlockSurface(Game_Screen);
-                            SDL_Flip(Game_Screen);*/
-
-                            FlipActive = 0;
-
-                            if (DestroyAfterFlip)
-                            {
-                                Game_Display_Destroy(1);
-                                DestroyAfterFlip = 0;
-                            }
-
-                            if (CreateAfterFlip)
-                            {
-                                Game_Display_Create();
-                                CreateAfterFlip = 0;
-                            }
-                        }
-
-                        break;
-                        // case EC_DISPLAY_FLIP_FINISH:
-                    case EC_PROGRAM_QUIT:
-                        if (Thread_Exit) exit(1);
-
-                        Thread_Exit = 1;
-
-                        SDL_SemPost(Game_FlipSem);
-
-                        SDL_WaitThread(FlipThread, NULL);
-
-                        SDL_WaitThread(MainThread, NULL);
-
-                        SDL_WaitThread(TimerThread, NULL);
-
-                        break;
-                        // case EC_PROGRAM_QUIT:
-                    case EC_MOUSE_MOVE:
-                        {
-                            int mousex, mousey;
-
-                            SDL_GetMouseState(&mousex, &mousey);
-                        #ifdef USE_SDL2
-                            SDL_WarpMouseInWindow(Game_Window, mousex + (intptr_t) event.user.data1, mousey + (intptr_t) event.user.data2);
-                        #else
-                            SDL_WarpMouse(mousex + (intptr_t) event.user.data1, mousey + (intptr_t) event.user.data2);
-                        #endif
-                        }
-                        break;
-                    case EC_MOUSE_SET:
-                        {
-                        #ifdef USE_SDL2
-                            SDL_WarpMouseInWindow(Game_Window, (intptr_t) event.user.data1, (intptr_t) event.user.data2);
-                        #else
-                            SDL_WarpMouse((intptr_t) event.user.data1, (intptr_t) event.user.data2);
-                        #endif
-                        }
-                        break;
-                    //senquack - need this to allow macros to behave in battlescape
-                    case EC_DELAY:
-                        SDL_Delay((intptr_t) event.user.data1);
-                        break;
-                        // case EC_DELAY:
-
-                    case EC_SET_VOLUME:
-//senquack - SOUND STUFF
-                        if (Game_Sound)
-                        {
-                            // Sound sample relative volume now configurable:
-                            Mix_Volume(-1, (Game_AudioSampleVolume * Game_AudioMasterVolume) >> 7);
-                        }
-
-                        if (Game_Music)
-                        {
-                            Game_SetMusicVolume();
-                        }
-                        break;
-                }
-
-                break;
-                // case SDL_USEREVENT:
-            default:
-                Handle_Input_Event2(&event);
-                break;
-        } // switch(event.type)
+        Game_Event_Tick();
     }
-
+#endif
 }
 
 int main (int argc, char *argv[])

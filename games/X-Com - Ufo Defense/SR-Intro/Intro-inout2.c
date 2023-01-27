@@ -136,6 +136,7 @@ uint32_t Game_outp(const uint32_t port, const uint32_t value)
             }
 
             break;
+case 0:break;
             // case 0x03c9:
 	    default:
             Game_StopMain();

@@ -88,7 +88,7 @@ void X86_OutPortProcedure(
             {
                 return;
             }
-            break;
+            return;
             // case 0x0043:
         case 0x03c8:
             // Set palette index for writing

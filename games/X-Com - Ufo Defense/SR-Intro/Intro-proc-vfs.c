@@ -90,6 +90,10 @@ FILE *Game_fopen(const char *filename, const char *mode)
     ret = fopen((char *) &temp_str, mode);
     Game_Set_errno_val();
 
+#if defined(__DEBUG__)
+    fprintf(stderr, "fopen: result %p (%i)\n", ret, vfs_err);
+#endif
+
     if (vfs_err && ret != NULL)
     {
         vfs_add_file(realdir, (char *) &temp_str);
