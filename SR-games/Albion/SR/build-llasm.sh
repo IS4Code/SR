@@ -4,4 +4,4 @@ cp llasm/*.sci ./
 ./SR.exe MAIN.EXE Albion-main.asm >a.a 2>b.a
 rm *.sci
 ./compact_source_llasm.py
-rm *.a
+#rm *.a

@@ -36,7 +36,7 @@
 #define OUT_ARM_LINUX 4
 #define OUT_LLASM 7
 
-#define OUTPUT_TYPE  OUT_X86
+#define OUTPUT_TYPE  OUT_LLASM
 
 
 #if (OUTPUT_TYPE != OUT_ORIG)
