@@ -301,9 +301,9 @@ elif device == 'pyra':
 elif device == 'web':
     llasm_version = True
     env['CC'] = 'emcc'
-    env['ENV']['PATH'] = os.environ['PATH']
-    env.Append(CCFLAGS    = '-gsource-map -D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sUSE_SDL=2 -pthread -sUSE_PTHREADS=1',
-               LINKFLAGS  = '-gsource-map -sUSE_SDL_MIXER=2 -sUSE_SDL=2 --source-map-base ./ -sCASE_INSENSITIVE_FS=1 --preload-file data_preload@ --embed-file data_embed@ -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sOFFSCREEN_FRAMEBUFFER -sOFFSCREENCANVAS_SUPPORT',
+    env['ENV'] = dict(os.environ)
+    env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
+               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 --preload-file data_preload@ --embed-file data_embed@ -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'

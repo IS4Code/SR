@@ -934,7 +934,7 @@ static int Game_Initialize(void)
     Thread_Exited = 0;
     Thread_Exit = 0;
     SMK_Playing = 0;
-    VK_Visible = 1;
+    VK_Visible = 0;
     Game_OldCursor = NULL;
     Game_NoCursor = NULL;
     Game_MinCursor = NULL;
@@ -1338,7 +1338,11 @@ static void Game_Event_Loop(void)
         Thread_Exited = 1;
         Thread_Exit = 1;
 
+#if defined(__EMSCRIPTEN__)
+        SDL_DetachThread(TimerThread);
+#else
         SDL_WaitThread(TimerThread, NULL);
+#endif
 
         return;
     }
@@ -1353,8 +1357,13 @@ static void Game_Event_Loop(void)
 
         SDL_SemPost(Game_FlipSem);
 
+#if defined(__EMSCRIPTEN__)
+        SDL_DetachThread(FlipThread);
+        SDL_DetachThread(TimerThread);
+#else
         SDL_WaitThread(FlipThread, NULL);
         SDL_WaitThread(TimerThread, NULL);
+#endif
 
         return;
     }
@@ -1383,8 +1392,32 @@ static void Game_Event_Loop(void)
 
 }
 
+static void Game_HandleEvent(void);
+
 void Game_Iterate(void)
 {
+#if defined(__EMSCRIPTEN__)
+    // process all events piled up to the callback
+    for (;;)
+    {
+        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+        if (NumEvents <= 0) // error or no events
+        {
+            SDL_PumpEvents();
+            NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+            if (NumEvents <= 0) break; // still no events this iteration
+        }
+
+        if (Handle_Input_Event(&event)) continue;
+
+        Game_HandleEvent();
+    }
+
+    if (Thread_Exited)
+    {
+        exit(Game_Finalize());
+    }
+#else
     NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
     if (NumEvents <= 0) // error or no events
     {
@@ -1403,6 +1436,12 @@ void Game_Iterate(void)
 
     if (Handle_Input_Event(&event)) return;
 
+    Game_HandleEvent();
+#endif
+}
+
+static void Game_HandleEvent(void)
+{
     switch(event.type)
     {
         case SDL_WINDOWEVENT:
@@ -1524,11 +1563,19 @@ void Game_Iterate(void)
 
             SDL_SemPost(Game_FlipSem);
 
+#if defined(__EMSCRIPTEN__)
+            SDL_DetachThread(FlipThread);
+
+            SDL_DetachThread(MainThread);
+
+            SDL_DetachThread(TimerThread);
+#else
             SDL_WaitThread(FlipThread, NULL);
 
             SDL_WaitThread(MainThread, NULL);
 
             SDL_WaitThread(TimerThread, NULL);
+#endif
 
             break;
             // case SDL_QUIT:
@@ -1642,11 +1689,19 @@ void Game_Iterate(void)
 
                         SDL_SemPost(Game_FlipSem);
 
+#if defined(__EMSCRIPTEN__)
+                        SDL_DetachThread(FlipThread);
+
+                        SDL_DetachThread(MainThread);
+
+                        SDL_DetachThread(TimerThread);
+#else
                         SDL_WaitThread(FlipThread, NULL);
 
                         SDL_WaitThread(MainThread, NULL);
 
                         SDL_WaitThread(TimerThread, NULL);
+#endif
                     }
 
                     break;
@@ -1674,14 +1729,6 @@ void Game_Iterate(void)
             Handle_Input_Event2(&event);
             break;
     } // switch(event.type)
-
-#if defined(__EMSCRIPTEN__)
-    if (Thread_Exited)
-    {
-        exit(Game_Finalize());
-    }
-#endif
-
 }
 
 int main (int argc, char *argv[])
