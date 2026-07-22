@@ -310,7 +310,12 @@ elif device == 'web':
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
               )
-    program_name += '.html'
+    if not clean:
+        try:
+            os.makedirs('publish')
+        except OSError:
+            pass
+    program_name = 'publish/' + program_name + '.html'
 
 def get_compiler_version(compiler_path, env_path):
     process = subprocess.Popen([compiler_path, '-dumpversion'], stdout=subprocess.PIPE, env={"PATH": env_path})

@@ -13,6 +13,9 @@
 llasm/llasm
 **/smk_play/smk_play
 **/SR-Main/SR-Main
+**/SR-Main/data_embed/
+**/SR-Main/data_preload/
+**/SR-Main/publish/
 **/SR-War/SR-War
 **/SR-Xcom1/SR-Geoscape
 **/SR-Xcom1/SR-Tactical
