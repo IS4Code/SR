@@ -68,4 +68,6 @@ SR*/udis86*/**/tests/difftest.sh
 
 midi-plugins/**/include
 !midi-plugins/xcom12/include
+!midi-plugins/libADLMIDI/include
+!midi-plugins/libADLMIDI/include/**
 midi-plugins/**/lib

@@ -301,6 +301,8 @@ elif device == 'pyra':
 elif device == 'web':
     llasm_version = True
     env['CC'] = 'emcc'
+    env['CXX'] = 'em++'
+    env['LINK'] = 'em++'
     env['ENV'] = dict(os.environ)
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
                LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 --preload-file data_preload@ --embed-file data_embed@ -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
@@ -344,6 +346,35 @@ display_objs = SConscript('display/SConscript', exports='device env')
 audio_objs = SConscript('audio/SConscript', exports='device env')
 input_objs = SConscript('input/SConscript', exports='device env')
 
+# Embed ADLMIDI
+midi_objs = []
+if device == 'web':
+    mp_dir = '../../../midi-plugins'
+    adl_dir = mp_dir + '/libADLMIDI'
+    adl_env = env.Clone()
+    adl_env['CXX'] = 'em++'
+    adl_env.Append(CPPPATH = [adl_dir + '/include', adl_dir + '/src', mp_dir],
+                   CXXFLAGS = ' -std=c++11',
+                   CPPDEFINES = ['ADLMIDI_DISABLE_OPAL_EMULATOR', 'ADLMIDI_DISABLE_JAVA_EMULATOR',
+                                 'ADLMIDI_DISABLE_ESFMU_EMULATOR', 'ADLMIDI_DISABLE_MAME_OPL2_EMULATOR',
+                                 'ADLMIDI_DISABLE_YMFM_EMULATOR'])
+    adl_sources = [
+        'src/adlmidi.cpp', 'src/adlmidi_load.cpp', 'src/adlmidi_midiplay.cpp',
+        'src/adlmidi_opl3.cpp', 'src/adlmidi_private.cpp', 'src/adlmidi_sequencer.cpp',
+        'src/inst_db.cpp',
+        'src/models/model_ail.c', 'src/models/model_apogee.c', 'src/models/model_dmx.c',
+        'src/models/model_generic.c', 'src/models/model_hmi_sos.c', 'src/models/model_msadlib.c',
+        'src/models/model_oconnell.c', 'src/models/model_win9x.c',
+        'src/chips/dosbox_opl3.cpp', 'src/chips/dosbox/dbopl.cpp',
+        'src/chips/nuked_opl3.cpp', 'src/chips/nuked/nukedopl3.c',
+        'src/chips/nuked_opl3_fast.cpp', 'src/chips/nuked_fast/nukedopl3_fast.c',
+        'src/chips/nuked_opl2.cpp', 'src/chips/nuked/nukedopl2.c',
+        'src/chips/nuked_cqm.cpp', 'src/chips/nuked_cqm/cqm.c',
+    ]
+    for s in adl_sources:
+        midi_objs.append(adl_env.Object('midi_build/' + os.path.splitext(os.path.basename(s))[0], adl_dir + '/' + s))
+    midi_objs.append(adl_env.Object('midi_build/midi-adlmidi', mp_dir + '/midi-adlmidi.c'))
+
 if llasm_version:
     arch_objs = SConscript('llasm/SConscript', exports='env')
 elif device == 'pc-windows' or device == 'pc-linux':
@@ -354,4 +385,4 @@ else:
     arch_objs = SConscript('arm/SConscript', exports='device env')
 
 
-env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs)
+env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs + midi_objs)

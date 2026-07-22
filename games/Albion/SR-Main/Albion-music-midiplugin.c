@@ -691,6 +691,21 @@ int MidiPlugin_Startup(void)
     last_volume[0] = -1;
     last_volume[1] = -1;
 
+#if defined(__EMSCRIPTEN__)
+    // use embedded ADLMIDI directly
+    #define free_library(handle) ((void)(handle))
+    extern int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions);
+
+    if (Game_MidiSubsystem != 3) // only ADLMIDI is supported
+    {
+        fprintf(stderr, "%s: %s\n", "midi", "only the adlmidi plugin is available in this build");
+        return 1;
+    }
+
+    (void)plugin_name;
+    MP_handle = (void *)1; // dummy non-NULL, not a real library handle
+    MP_initialize = initialize_midi_plugin;
+#else
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
     #define free_library FreeLibrary
     #define get_proc_address GetProcAddress
@@ -736,6 +751,7 @@ int MidiPlugin_Startup(void)
 #endif
 
     MP_initialize = (midi_plugin_initialize) get_proc_address(MP_handle, MIDI_PLUGIN_INITIALIZE);
+#endif
 
     if (MP_initialize == NULL)
     {

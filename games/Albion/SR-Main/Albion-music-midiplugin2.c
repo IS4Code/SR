@@ -476,6 +476,11 @@ int MidiPlugin2_Startup(void)
     midi_plugin2_parameters MP2_parameters;
     int index;
 
+#if defined(__EMSCRIPTEN__)
+    fprintf(stderr, "%s: %s\n", "midi", "plugin loading not supported");
+    return 2;
+#endif
+
     last_volume1 = -1;
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
