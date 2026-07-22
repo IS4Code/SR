@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2019 Roman Pauer
+ *  Copyright (C) 2016-2025 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -35,6 +35,10 @@
 	#define EXTERNAL_VARIABLE extern
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 EXTERNAL_VARIABLE section_data section[MAX_SECTIONS];   // array of sections
 EXTERNAL_VARIABLE unsigned int num_sections;            // number of sections
 EXTERNAL_VARIABLE uint8_t *SR_CodeBase;                 // allocated data
@@ -56,7 +60,15 @@ EXTERNAL_VARIABLE char *data_to_code_fixups_name;
 EXTERNAL_VARIABLE int esp_dword_aligned;
 EXTERNAL_VARIABLE int ebp_dword_aligned;
 
-#include "judy_helpers.h"
+#ifdef __cplusplus
+}
+#endif
+
+#if defined(USE_JUDY)
+	#include "judy_helpers.h"
+#else
+	#include "container_helpers.h"
+#endif
 
 int SR_get_section_reladr(uint_fast32_t Address, uint_fast32_t *SecNum, uint_fast32_t *RelAdr);
 
@@ -87,9 +99,11 @@ int SR_disassemble_offset_dos(unsigned int Entry, uint_fast32_t offset);
 int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset);
 int SR_disassemble_region_arm(unsigned int Entry, region_data *region);
 int SR_disassemble_region_llasm(unsigned int Entry, region_data *region);
+int SR_disassemble_region_x64(unsigned int Entry, region_data *region);
 
 int SR_disassemble_arm_instruction(unsigned int Entry, output_data *output, uint_fast32_t flags_to_write, uint_fast32_t *pflags_write, uint_fast32_t *pflags_read);
 int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, uint_fast32_t flags_to_write, uint_fast32_t *pflags_write, uint_fast32_t *pflags_read, int *plast_instruction);
+int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, region_data *region);
 
 #undef EXTERNAL_VARIABLE
 

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -31,7 +31,7 @@
 
 #pragma pack(1)
 
-typedef struct __attribute__ ((__packed__)) _VbeInfoBlock_
+typedef struct PACKED _VbeInfoBlock_
 {
     uint8_t  VbeSignature[4];
     uint16_t VbeVersion;
@@ -47,7 +47,7 @@ typedef struct __attribute__ ((__packed__)) _VbeInfoBlock_
     uint8_t  OemData[256];
 } VbeInfoBlock;
 
-typedef struct __attribute__ ((__packed__)) _ModeInfoBlock_
+typedef struct PACKED _ModeInfoBlock_
 {
 // Mandatory information for all VBE revisions
     uint16_t ModeAttributes;
@@ -113,7 +113,7 @@ void Game_intDPMI(
                     {
                         VbeInfoBlock *VIB;
 
-                        VIB = (VbeInfoBlock *)(uintptr_t) ESI;
+                        VIB = (VbeInfoBlock *)(void *) PTR_ESI;
 
                         VIB->VbeSignature[0] = 'V';
                         VIB->VbeSignature[1] = 'E';
@@ -144,7 +144,7 @@ void Game_intDPMI(
                     {
                         ModeInfoBlock *MIB;
 
-                        MIB = (ModeInfoBlock *)(uintptr_t) ESI;
+                        MIB = (ModeInfoBlock *)(void *) PTR_ESI;
 
                         MIB->ModeAttributes = 0x19;
                         MIB->WinAAttributes = 0x07;

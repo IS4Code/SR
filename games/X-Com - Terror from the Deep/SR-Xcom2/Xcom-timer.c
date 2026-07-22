@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +22,6 @@
  *
  */
 
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_thread.h"
 #include "Xcom-timer.h"
@@ -33,7 +32,7 @@
 #include "input.h"
 
 
-void Game_RunTimer(void)
+void CCALL Game_RunTimer(void)
 {
     int DelayGame;
 
@@ -107,7 +106,7 @@ void Game_RunTimer(void)
     }
 }
 
-void Game_RunTimerDelay(void)
+void CCALL Game_RunTimerDelay(void)
 {
     if (Game_TimerRun == Game_TimerTick)
     {
@@ -129,7 +128,7 @@ int Game_TimerThread(void *data)
     VSyncTickCounter = TimerTickCounter = 0;
     VSyncAction = TimerAction = SkipDelay = 0;
 
-    while (1)
+    for (;;)
     {
         if (SkipDelay)
         {
@@ -184,7 +183,7 @@ int Game_TimerThread(void *data)
 
         if (Thread_Exit && Thread_Exited)
         {
-            return 0;
+            break;
         }
 
         if (TimerAction)
@@ -204,17 +203,6 @@ int Game_TimerThread(void *data)
         if (VSyncAction)
         {
             VSyncAction = 0;
-
-            if (Game_VolumeDelta == 1)
-            {
-//senquack - SOUND STUFF
-                Change_HW_Audio_Volume(1);
-            }
-            else if (Game_VolumeDelta == -1)
-            {
-//senquack - SOUND STUFF
-                Change_HW_Audio_Volume(-1);
-            }
 
             Game_VSyncTick++;
 

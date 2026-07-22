@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -54,7 +54,7 @@ typedef struct _MP_midi_ {
 static const unsigned char roland_canvas_initial_sysex[] = {
     0xF0, 0x41, 0x10, 0x42, 0x12, // sysex event header
     0x40, 0x01, 0x30, 0x02, 0x04, 0x00, 0x40, 0x40, 0x00, 0x00, // reverb settings
-    0x09, // checkum
+    0x09, // checksum
     0xF7, // end of sysex event
     0xFF  // end of sysex events list
 };
@@ -86,11 +86,11 @@ static MP_midi MP_sequence;
 
 static uint8_t *load_file(char const *midifile, unsigned int *res_midi_size)
 {
-    if (midifile == NULL) return NULL;
-
     FILE *f;
     size_t filelen;
     uint8_t *midibuffer;
+
+    if (midifile == NULL) return NULL;
 
     f = fopen(midifile, "rb");
     if (f == NULL) return NULL;
@@ -108,7 +108,7 @@ static uint8_t *load_file(char const *midifile, unsigned int *res_midi_size)
 
     if (res_midi_size != NULL)
     {
-        *res_midi_size = filelen;
+        *res_midi_size = (unsigned int)filelen;
     }
 
     return midibuffer;
@@ -122,6 +122,7 @@ load_file_error:
 
 static int prepare_roland_mt32_sysex(void)
 {
+    void *stream;
     FILE *f;
     uint32_t num_files, file_offset, file_len, lapc1_pat_len;
     uint8_t *lapc1_pat, *roland_mt32_sysex, *cur_sysex;
@@ -130,16 +131,17 @@ static int prepare_roland_mt32_sysex(void)
     uint8_t name[256];
 
     // open file "drivers.cat"
-    f = Game_fopen("C:\\SOUND\\DRIVERS.CAT", "rb");
-    if (f == NULL)
+    stream = Game_fopen("C:\\SOUND\\DRIVERS.CAT", "rb");
+    if (stream == NULL)
     {
         return 2;
     }
+    f = (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream;
 
     // find file "lapc1.pat" in "drivers.cat"
     if (1 != fread(&num_files, 4, 1, f))
     {
-        Game_fclose(f);
+        Game_fclose(stream);
         return 3;
     }
     num_files >>= 3;
@@ -174,7 +176,7 @@ static int prepare_roland_mt32_sysex(void)
         }
     }
 
-    Game_fclose(f);
+    Game_fclose(stream);
 
     if (lapc1_pat == NULL)
     {
@@ -229,7 +231,7 @@ static int prepare_roland_mt32_sysex(void)
         file_offset++;
     } while (lapc1_pat[file_offset] != 0xff);
 
-    *cur_sysex = 0xf7;
+    *cur_sysex = 0xff;
 
     free(lapc1_pat);
 
@@ -249,7 +251,6 @@ int MidiPlugin2_Startup(void)
     #define get_proc_address GetProcAddress
 
     if (Game_MidiSubsystem == 21 || Game_MidiSubsystem == 31) plugin_name = ".\\midi2-windows.dll";
-    else if (Game_MidiSubsystem == 22 || Game_MidiSubsystem == 32) plugin_name = ".\\midi2-alsa.dll";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -261,15 +262,18 @@ int MidiPlugin2_Startup(void)
 
     if (MP2_handle == NULL)
     {
-        fprintf(stderr, "%s: load error: 0x%x\n", "midi2", GetLastError());
+        fprintf(stderr, "%s: load error: 0x%x\n", "midi2", (unsigned int)GetLastError());
         return 2;
     }
 #else
     #define free_library dlclose
     #define get_proc_address dlsym
 
-    if (Game_MidiSubsystem == 21 || Game_MidiSubsystem == 31) plugin_name = "./midi2-windows.so";
-    else if (Game_MidiSubsystem == 22 || Game_MidiSubsystem == 32) plugin_name = "./midi2-alsa.so";
+#if defined(__APPLE__)
+    if (Game_MidiSubsystem == 23 || Game_MidiSubsystem == 33) plugin_name = "./midi2-coremidi.so";
+#else
+    if (Game_MidiSubsystem == 22 || Game_MidiSubsystem == 32) plugin_name = "./midi2-alsa.so";
+#endif
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -303,19 +307,28 @@ int MidiPlugin2_Startup(void)
     }
     else
     {
-        if (roland_mt32_initial_sysex == NULL)
+        if (Game_LoadMidiFiles)
         {
-            if (0 != prepare_roland_mt32_sysex())
-            {
-                fprintf(stderr, "%s: error: %s\n", "midi2", "failed to prepare MT-32 sysex");
-                free_library(MP2_handle);
-                return 4;
-            }
+            MP2_parameters.midi_type = 2;
         }
-        MP2_parameters.initial_sysex_events = roland_mt32_initial_sysex;
-        MP2_parameters.reset_controller_events = roland_mt32_reset_controller;
-        MP2_parameters.midi_type = 1;
+        else
+        {
+            if (roland_mt32_initial_sysex == NULL)
+            {
+                if (0 != prepare_roland_mt32_sysex())
+                {
+                    fprintf(stderr, "%s: error: %s\n", "midi2", "failed to prepare MT-32 sysex");
+                    free_library(MP2_handle);
+                    return 4;
+                }
+            }
+            MP2_parameters.initial_sysex_events = roland_mt32_initial_sysex;
+            MP2_parameters.reset_controller_events = roland_mt32_reset_controller;
+            MP2_parameters.midi_type = 1;
+        }
     }
+    MP2_parameters.mt32_delay = Game_MT32DelaySysex;
+    MP2_parameters.mt32_display_text = " X-COM: UFO Defense";
 
     if (MP2_initialize(&MP2_parameters, &MP2_functions))
     {
@@ -357,7 +370,7 @@ void MidiPlugin2_SetMusicVolume(void)
 
     if (Game_Music)
     {
-        new_volume = (Game_AudioMasterVolume * Game_MusicSequence.volume * Game_AudioMusicVolume * 127) >> 21;
+        new_volume = (Game_MusicSequence.volume * Game_AudioMusicVolume * 127) >> 14;
 
         MP2_functions.set_volume(new_volume);
     }

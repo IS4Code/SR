@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -31,20 +31,29 @@
 #endif
 
 #include <stdio.h>
-#include <malloc.h>
 #include <stdlib.h>
 #include "midi-plugins.h"
 #include "emu_x86.h"
 
+#ifdef _MSC_VER
+    #define EXPORT __declspec(dllexport)
+#elif defined __GNUC__
+    #define EXPORT __attribute__ ((visibility ("default")))
+#else
+    #define EXPORT
+#endif
+
 
 static char const *check_file(char const *filename)
 {
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    DWORD dwAttrib;
+#endif
+
     if (filename == NULL) return NULL;
     if (*filename == 0) return NULL;
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
-    DWORD dwAttrib;
-
     dwAttrib = GetFileAttributesA(filename);
     if ((dwAttrib == INVALID_FILE_ATTRIBUTES) || (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
 #else
@@ -62,7 +71,7 @@ static char const *check_file(char const *filename)
 
 
 
-static int set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
+static int MIDI_PLUGIN_API set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
 {
     if (!emu_x86_setvolume((master_volume * 128) / 127))
     {
@@ -72,13 +81,13 @@ static int set_master_volume(unsigned char master_volume) // master_volume = 0 -
     return 0;
 }
 
-static void *open_file(char const *midifile)
+static void * MIDI_PLUGIN_API open_file(char const *midifile)
 {
-    if (midifile == NULL) return NULL;
-
     FILE *f;
     size_t filelen;
     void *midibuffer;
+
+    if (midifile == NULL) return NULL;
 
     f = fopen(midifile, "rb");
     if (f == NULL) return NULL;
@@ -94,7 +103,7 @@ static void *open_file(char const *midifile)
     if (fread(midibuffer, 1, filelen, f) != filelen) goto open_file_error2;
     fclose(f);
 
-    if (!emu_x86_playsequence(midibuffer, filelen))
+    if (!emu_x86_playsequence(midibuffer, (int)filelen))
     {
         free(midibuffer);
         return NULL;
@@ -110,12 +119,12 @@ open_file_error:
     return NULL;
 }
 
-static void *open_buffer(void const *midibuffer, long int size)
+static void * MIDI_PLUGIN_API open_buffer(void const *midibuffer, long int size)
 {
     if (midibuffer == NULL) return NULL;
     if (size <= 0) return NULL;
 
-    if (!emu_x86_playsequence(midibuffer, size))
+    if (!emu_x86_playsequence(midibuffer, (int)size))
     {
         return NULL;
     }
@@ -123,17 +132,17 @@ static void *open_buffer(void const *midibuffer, long int size)
     return (void *) 1;
 }
 
-static long int get_data(void *handle, void *buffer, long int size)
+static long int MIDI_PLUGIN_API get_data(void *handle, void *buffer, long int size)
 {
     if (handle == NULL) return -2;
     if (buffer == NULL) return -3;
     if (size < 0) return -4;
     if (size < 4) return 0;
 
-    return emu_x86_getdata(buffer, size);
+    return emu_x86_getdata(buffer, (int)size);
 }
 
-static int rewind_midi(void *handle)
+static int MIDI_PLUGIN_API rewind_midi(void *handle)
 {
     if (handle == NULL) return -2;
 
@@ -145,7 +154,7 @@ static int rewind_midi(void *handle)
     return 0;
 }
 
-static int close_midi(void *handle)
+static int MIDI_PLUGIN_API close_midi(void *handle)
 {
     if (handle == NULL) return -2;
 
@@ -157,23 +166,25 @@ static int close_midi(void *handle)
     return 0;
 }
 
-static void shutdown_plugin(void)
+static void MIDI_PLUGIN_API shutdown_plugin(void)
 {
     emu_x86_shutdown();
 }
 
 
-__attribute__ ((visibility ("default")))
-int initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
+EXPORT
+int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
 {
     char const *drivers_cat;
     char const *mt32_roms;
+    char const *awe32_rom;
     int opl3_emulator;
     int resampling_quality;
     unsigned int sampling_rate;
 
     drivers_cat = NULL;
     mt32_roms = NULL;
+    awe32_rom = NULL;
     opl3_emulator = 0;
     resampling_quality = 0;
     sampling_rate = rate;
@@ -181,6 +192,7 @@ int initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const
     {
         drivers_cat = check_file(parameters->drivers_cat_path);
         mt32_roms = parameters->mt32_roms_path;
+        awe32_rom = parameters->awe32_rom_path;
         opl3_emulator = parameters->opl3_emulator;
         resampling_quality = parameters->resampling_quality;
         if (sampling_rate == 0)
@@ -201,7 +213,7 @@ int initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const
     functions->close_midi = &close_midi;
     functions->shutdown_plugin = &shutdown_plugin;
 
-    if (!emu_x86_initialize(sampling_rate, drivers_cat, mt32_roms, opl3_emulator, resampling_quality))
+    if (!emu_x86_initialize(sampling_rate, drivers_cat, mt32_roms, awe32_rom, opl3_emulator, resampling_quality))
     {
         return -1;
     }

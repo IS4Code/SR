@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,7 +24,11 @@
 
 #include <string.h>
 #include <fcntl.h>
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "virtualfs.h"
@@ -65,7 +69,7 @@ const static struct {
 extern "C" {
 #endif
 
-extern int Game_ReadSong(const char *catalog_name, int index, uint8_t *buf);
+extern int CCALL Game_ReadSong(const char *catalog_name, int index, uint8_t *buf);
 
 #ifdef __cplusplus
 }
@@ -109,15 +113,18 @@ static int Game_FindMidiFile(int index, uint8_t *buf)
     return 1;
 }
 
-int Game_ReadSong(const char *catalog_name, int index, uint8_t *buf)
+int CCALL Game_ReadSong(const char *catalog_name, int index, uint8_t *buf)
 {
+    void *stream;
     FILE *f;
     uint32_t num_files, file_offset, file_size, next_offset;
     uint8_t name_length;
 
+    Game_SongLength = 0;
+
     if (index < 0) return 0;
 
-    if ((Game_MidiSubsystem < 10) || (Game_MidiSubsystem > 20 && Game_MidiSubsystem <= 30))
+    if (Game_LoadMidiFiles)
     {
         if (Game_FindMidiFile(index, buf))
         {
@@ -125,8 +132,9 @@ int Game_ReadSong(const char *catalog_name, int index, uint8_t *buf)
         }
     }
 
-    f = Game_fopen(catalog_name, "rb");
-    if (f == NULL) return 0;
+    stream = Game_fopen(catalog_name, "rb");
+    if (stream == NULL) return 0;
+    f = (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream;
     if (fread(&num_files, 4, 1, f) != 1) goto read_song_error;
 
     num_files >>= 3;
@@ -166,16 +174,18 @@ int Game_ReadSong(const char *catalog_name, int index, uint8_t *buf)
 
     if (fread(buf, 1, file_size, f) != file_size) goto read_song_error;
 
+    Game_SongLength = file_size;
+
     if (Game_MidiRemapGM2MT32)
     {
         gmcat2rolandcat(buf);
     }
 
-    Game_fclose(f);
+    Game_fclose(stream);
     return 1;
 
 read_song_error:
-    Game_fclose(f);
+    Game_fclose(stream);
     return 0;
 }
 

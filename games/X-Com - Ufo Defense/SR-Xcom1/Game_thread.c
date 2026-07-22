@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,8 +24,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <malloc.h>
-#include <unistd.h>
 #if defined(__GNU_LIBRARY__) || defined(__GLIBC__)
     #ifndef __USE_GNU
         #define __USE_GNU 1
@@ -34,6 +32,7 @@
 #endif
 #include "Game_defs.h"
 #include "Game_vars.h"
+#include "Game_memory.h"
 #include "Game_scalerplugin.h"
 #include "Game_misc.h"
 #include "Game_thread.h"
@@ -56,7 +55,7 @@ static void ChangeThreadPriority(void)
 #endif
 }
 
-static __attribute__ ((noinline)) void Game_CleanAfterMain(void)
+static NOINLINE void Game_CleanAfterMain(void)
 {
     Game_Executable = 0;
 
@@ -82,8 +81,8 @@ static __attribute__ ((noinline)) void Game_CleanAfterMain(void)
     Game_list_clear(&Game_DopenList, (void (*)(uintptr_t)) &Game_dclose);
 
     // sync data to disk
-    fflush(Game_stdout);
-    fflush(Game_stderr);
+    Game_fflush(Game_stdout);
+    Game_fflush(Game_stderr);
     Game_Sync();
 
     // free allocated memory
@@ -92,14 +91,11 @@ static __attribute__ ((noinline)) void Game_CleanAfterMain(void)
 }
 
 #if ((EXE_BUILD == EXE_COMBINED) || (EXE_BUILD == EXE_GEOSCAPE))
-static __attribute__ ((noinline)) int Game_Main_Geoscape(const char *arg1)
+static NOINLINE int Game_Main_Geoscape(const char *arg1)
 {
-    const static char main_filename[] = "GEOSCAPE.EXE";
-    PTR32(char) main_argv[3];
+#define MLEN 12
 
-    main_argv[0] = (char *) main_filename;
-    main_argv[1] = (char *) arg1;
-    main_argv[2] = NULL;
+    const static char main_filename[MLEN+1] = "GEOSCAPE.EXE";
 
 #if (EXE_BUILD == EXE_COMBINED)
     memcpy(&geoscape_data_begin, Geoscape_DataBackup, &geoscape_data_end - &geoscape_data_begin);
@@ -113,21 +109,44 @@ static __attribute__ ((noinline)) int Game_Main_Geoscape(const char *arg1)
     }
     else
     {
+        uint8_t *argv_local;
+        int arg_len, ret;
+
+        arg_len = (arg1 != NULL) ? (int)strlen(arg1) + 1 : 0;
+        argv_local = (uint8_t *)x86_malloc(3 * sizeof(uint32_t) + MLEN+1 + arg_len);
+        if (argv_local == NULL)
+        {
+            fprintf(stderr, "Error: Not enough memory\n");
+            return 1;
+        }
+
+        ((PTR32(uint8_t) *)argv_local)[0] = argv_local + 3 * sizeof(uint32_t);
+        ((PTR32(uint8_t) *)argv_local)[1] = (arg1 != NULL) ? argv_local + 3 * sizeof(uint32_t) + MLEN+1 : NULL;
+        ((PTR32(uint8_t) *)argv_local)[2] = NULL;
+        memcpy(argv_local + 3 * sizeof(uint32_t), main_filename, MLEN+1);
+        if (arg1 != NULL)
+        {
+            memcpy(argv_local + 3 * sizeof(uint32_t) + MLEN + 1, arg1, arg_len);
+        }
+
         Game_Executable = EXE_GEOSCAPE;
-        return Game_Main_Asm((arg1 != NULL)?2:1, main_argv, (void *)geoscape_main_);
+        ret = Game_Main_Asm((arg1 != NULL)?2:1, (char **)argv_local, (void *)geoscape_main_);
+
+        x86_free(argv_local);
+
+        return ret;
     }
+
+#undef MLEN
 }
 #endif
 
 #if ((EXE_BUILD == EXE_COMBINED) || (EXE_BUILD == EXE_TACTICAL))
-static __attribute__ ((noinline)) int Game_Main_Tactical(const char *arg1)
+static NOINLINE int Game_Main_Tactical(const char *arg1)
 {
-    const static char main_filename[] = "TACTICAL.EXE";
-    PTR32(char) main_argv[3];
+#define MLEN 12
 
-    main_argv[0] = (char *) main_filename;
-    main_argv[1] = (char *) arg1;
-    main_argv[2] = NULL;
+    const static char main_filename[MLEN+1] = "TACTICAL.EXE";
 
 #if (EXE_BUILD == EXE_COMBINED)
     memcpy(&tactical_data_begin, Tactical_DataBackup, &tactical_data_end - &tactical_data_begin);
@@ -141,20 +160,44 @@ static __attribute__ ((noinline)) int Game_Main_Tactical(const char *arg1)
     }
     else
     {
+        uint8_t *argv_local;
+        int arg_len, ret;
+
+        arg_len = (arg1 != NULL) ? (int)strlen(arg1) + 1 : 0;
+        argv_local = (uint8_t *)x86_malloc(3 * sizeof(uint32_t) + MLEN+1 + arg_len);
+        if (argv_local == NULL)
+        {
+            fprintf(stderr, "Error: Not enough memory\n");
+            return 1;
+        }
+
+        ((PTR32(uint8_t) *)argv_local)[0] = argv_local + 3 * sizeof(uint32_t);
+        ((PTR32(uint8_t) *)argv_local)[1] = (arg1 != NULL) ? argv_local + 3 * sizeof(uint32_t) + MLEN+1 : NULL;
+        ((PTR32(uint8_t) *)argv_local)[2] = NULL;
+        memcpy(argv_local + 3 * sizeof(uint32_t), main_filename, MLEN+1);
+        if (arg1 != NULL)
+        {
+            memcpy(argv_local + 3 * sizeof(uint32_t) + MLEN + 1, arg1, arg_len);
+        }
+
         Game_Executable = EXE_TACTICAL;
-        return Game_Main_Asm((arg1 != NULL)?2:1, main_argv, (void *)tactical_main_);
+        ret = Game_Main_Asm((arg1 != NULL)?2:1, (char **)argv_local, (void *)tactical_main_);
+
+        x86_free(argv_local);
+
+        return ret;
     }
+
+#undef MLEN
 }
 #endif
 
 #if ((EXE_BUILD == EXE_COMBINED) || (EXE_BUILD == EXE_INTRO))
-static __attribute__ ((noinline)) int Game_Main_Intro(void)
+static NOINLINE int Game_Main_Intro(void)
 {
-    const static char main_filename[] = "INTRO.EXE";
-    PTR32(char) main_argv[2];
+#define MLEN 9
 
-    main_argv[0] = (char *) main_filename;
-    main_argv[1] = NULL;
+    const static char main_filename[MLEN+1] = "INTRO.EXE";
 
     memset(&intro_bss_begin, 0, &intro_bss_end - &intro_bss_begin);
 
@@ -164,9 +207,29 @@ static __attribute__ ((noinline)) int Game_Main_Intro(void)
     }
     else
     {
+        uint8_t *argv_local;
+        int ret;
+
+        argv_local = (uint8_t *)x86_malloc(2 * sizeof(uint32_t) + MLEN+1);
+        if (argv_local == NULL)
+        {
+            fprintf(stderr, "Error: Not enough memory\n");
+            return 1;
+        }
+
+        ((PTR32(uint8_t) *)argv_local)[0] = argv_local + 2 * sizeof(uint32_t);
+        ((PTR32(uint8_t) *)argv_local)[1] = NULL;
+        memcpy(argv_local + 2 * sizeof(uint32_t), main_filename, MLEN+1);
+
         Game_Executable = EXE_INTRO;
-        return Game_Main_Asm(1, main_argv, (void *)intro_main_);
+        ret = Game_Main_Asm(1, (char **)argv_local, (void *)intro_main_);
+
+        x86_free(argv_local);
+
+        return ret;
     }
+
+#undef MLEN
 }
 #endif
 
@@ -190,6 +253,9 @@ void Game_StopMain(void)
 
 int Game_MainThread(void *data)
 {
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_InitThreadConcurency();
+#endif
 
     Game_CleanState(Thread_Exit);
 
@@ -253,15 +319,15 @@ int Game_MainThread(void *data)
         SDL_PushEvent(&event);
     }
 
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_CloseThreadConcurency();
+#endif
     return 0;
 }
 
 int Game_FlipThread(void *data)
 {
     SDL_Event event;
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    int clear_screen;
-#endif
 
 #undef FPS_WRITE
 
@@ -273,14 +339,10 @@ int Game_FlipThread(void *data)
     LastTimer = Game_VSyncTick;
 #endif
 
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    clear_screen = 0;
-#endif
-
-    while (1)
+    for (;;)
     {
         SDL_SemWait(Game_FlipSem);
-        if (Thread_Exit) return 0;
+        if (Thread_Exit) break;
 
 #ifdef FPS_WRITE
         CurrentTicks = SDL_GetTicks();
@@ -304,76 +366,12 @@ fprintf(stderr, "fps: %.3f    tps: %.3f\n", (float) NumDisplay * 1000 / (Current
 
         if (Game_DisplayActive)
         {
-        #if SDL_VERSION_ATLEAST(2,0,0)
             Display_Flip_Procedure(Game_FrameBuffer, Game_TextureData);
 
             if (Scaler_ScaleTextureData)
             {
                 ScalerPlugin_scale(Scaler_ScaleFactor, Game_TextureData, Game_ScaledTextureData, Render_Width, Render_Height, 1);
             }
-        #else
-        #ifdef ALLOW_OPENGL
-            if (Game_UseOpenGL)
-            {
-                Display_Flip_Procedure(Game_FrameBuffer, Game_TextureData);
-
-                if (Scaler_ScaleTextureData)
-                {
-                    ScalerPlugin_scale(Scaler_ScaleFactor, Game_TextureData, Game_ScaledTextureData, Render_Width, Render_Height, 1);
-                }
-            }
-            else
-        #endif
-            {
-                /* ??? */
-
-                SDL_LockSurface(Game_Screen);
-
-                if (Display_ChangeMode != 0)
-                {
-                    int mousex, mousey;
-
-                    Game_GetGameMouse(&mousex, &mousey);
-
-                    if (Change_Display_Mode(Display_ChangeMode))
-                    {
-                        clear_screen = 3;
-                    }
-
-                    Display_ChangeMode = 0;
-
-                    Game_VideoAspectX = ((320-1) << 16) / (Picture_Width-1);
-                    Game_VideoAspectY = ((200-1) << 16) / (Picture_Height-1);
-
-                    Game_VideoAspectXR = ((Picture_Width-1) << 16) / (320-1);
-                    Game_VideoAspectYR = ((Picture_Height-1) << 16) / (200-1);
-
-                    Game_RepositionMouse(mousex, mousey);
-                }
-
-                if (clear_screen)
-                {
-                    SDL_Rect rect;
-
-                    clear_screen--;
-
-                    rect.x = 0;
-                    rect.y = 0;
-                    rect.w = Game_Screen->w;
-                    rect.h = Game_Screen->h;
-                    SDL_FillRect(Game_Screen, &rect, 0);
-                }
-
-                Display_Flip_Procedure(Game_FrameBuffer, Game_Screen->pixels);
-
-                /* ??? */
-                SDL_UnlockSurface(Game_Screen);
-
-                VirtualKeyboard_Draw();
-
-                SDL_Flip(Game_Screen);
-            }
-        #endif
         }
 
         SDL_UnlockMutex(Game_ScreenMutex);
@@ -385,6 +383,8 @@ fprintf(stderr, "fps: %.3f    tps: %.3f\n", (float) NumDisplay * 1000 / (Current
 
         SDL_PushEvent(&event);
 
-        if (Thread_Exit) return 0;
+        if (Thread_Exit) break;
     }
+
+    return 0;
 }

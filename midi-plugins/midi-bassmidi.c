@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -34,10 +34,20 @@
 #endif
 
 #include <string.h>
-#include <malloc.h>
+#include <stdlib.h>
+#include <stdint.h>
 #include "midi-plugins.h"
 #include "bass.h"
 #include "bassmidi.h"
+
+#ifdef _MSC_VER
+    #define EXPORT __declspec(dllexport)
+    #define strdup _strdup
+#elif defined __GNUC__
+    #define EXPORT __attribute__ ((visibility ("default")))
+#else
+    #define EXPORT
+#endif
 
 static HSOUNDFONT soundfont_handle = 0;
 static int resampling_quality = 0;
@@ -45,12 +55,14 @@ static int resampling_quality = 0;
 
 static int file_exists(char const *filename)
 {
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    DWORD dwAttrib;
+#endif
+
     if (filename == NULL) return 0;
     if (*filename == 0) return 0;
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
-    DWORD dwAttrib;
-
     dwAttrib = GetFileAttributesA(filename);
     if ((dwAttrib == INVALID_FILE_ATTRIBUTES) || (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
 #else
@@ -68,7 +80,7 @@ static int file_exists(char const *filename)
 
 
 
-static int set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
+static int MIDI_PLUGIN_API set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
 {
     if (soundfont_handle == 0) return -2;
 
@@ -82,7 +94,7 @@ static int set_master_volume(unsigned char master_volume) // master_volume = 0 -
     return 0;
 }
 
-static void *open_file(char const *midifile)
+static void * MIDI_PLUGIN_API open_file(char const *midifile)
 {
     HSTREAM stream;
 
@@ -100,7 +112,7 @@ static void *open_file(char const *midifile)
     return (void *)(uintptr_t) stream;
 }
 
-static void *open_buffer(void const *midibuffer, long int size)
+static void * MIDI_PLUGIN_API open_buffer(void const *midibuffer, long int size)
 {
     HSTREAM stream;
 
@@ -119,7 +131,7 @@ static void *open_buffer(void const *midibuffer, long int size)
     return (void *)(uintptr_t) stream;
 }
 
-static long int get_data(void *handle, void *buffer, long int size)
+static long int MIDI_PLUGIN_API get_data(void *handle, void *buffer, long int size)
 {
     if (handle == NULL) return -2;
     if (buffer == NULL) return -3;
@@ -129,7 +141,7 @@ static long int get_data(void *handle, void *buffer, long int size)
     return BASS_ChannelGetData((HSTREAM)(uintptr_t)handle, buffer, size);
 }
 
-static int rewind_midi(void *handle)
+static int MIDI_PLUGIN_API rewind_midi(void *handle)
 {
     QWORD curpos;
 
@@ -146,7 +158,7 @@ static int rewind_midi(void *handle)
     return 0;
 }
 
-static int close_midi(void *handle)
+static int MIDI_PLUGIN_API close_midi(void *handle)
 {
     if (handle == NULL) return -2;
 
@@ -158,7 +170,7 @@ static int close_midi(void *handle)
     return 0;
 }
 
-static void shutdown_plugin(void)
+static void MIDI_PLUGIN_API shutdown_plugin(void)
 {
     if (soundfont_handle)
     {
@@ -169,8 +181,8 @@ static void shutdown_plugin(void)
 }
 
 
-__attribute__ ((visibility ("default")))
-int initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
+EXPORT
+int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
 {
     char const *soundfont_sf2;
     char *soundfont_name;

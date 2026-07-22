@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,22 +24,28 @@
 
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <io.h>
+#include <sys/timeb.h>
+#else
 #include <unistd.h>
+#include <sys/time.h>
+#endif
 #include <stdio.h>
 #include <string.h>
-#include <malloc.h>
-#include <fcntl.h>		/* needed for procedure Game_openFlags */
 #include <ctype.h>
 #include <time.h>
+#include <sys/types.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-proc.h"
 #include "Albion-timer.h"
+#include "Game_memory.h"
 #include "Game_misc.h"
 #include "Game_thread.h"
 
 
-int32_t Game_errno(void)
+int32_t CCALL Game_errno(void)
 {
     int err;
 
@@ -58,58 +64,91 @@ void Game_Set_errno_error(int errornum)
     errno_val = (errornum >= 0 && errornum < 256)?(errno_rtable[errornum]):(errornum);
 }
 
-int32_t Game_fclose(FILE *fp)
+char * CCALL Game_ctime2(const int32_t *timep, char *buf, int32_t max)
 {
+    time_t t2;
+
+    t2 = *timep;
+    if (0 == strftime(buf, max, "%a %b %d %H:%M:%S %Y\n", localtime(&t2)))
+    {
+        buf[0] = 0;
+    }
+
+    return buf;
+}
+
+static int32_t Game_fclose2(void *stream)
+{
+    FILE *fp;
     int ret;
 
-    Game_list_remove(&Game_FopenList, (uintptr_t)fp);
+    if ((sizeof(void *) > 4))
+    {
+        fp = *(FILE **)stream;
+        x86_free(stream);
+    }
+    else fp = (FILE *)stream;
+
     ret = fclose(fp);
     Game_Set_errno_val();
 
     return ret;
 }
 
-int32_t Game_fcloseall(void)
+int32_t CCALL Game_fclose(void *stream)
 {
-    Game_list_clear(&Game_FopenList, (void (*)(uintptr_t)) &fclose);
+    Game_list_remove(&Game_FopenList, (uintptr_t)stream);
+
+    return Game_fclose2(stream);
+}
+
+int32_t CCALL Game_fcloseall(void)
+{
+    Game_list_clear(&Game_FopenList, (void (*)(uintptr_t)) &Game_fclose2);
     return 0;
 }
 
-int32_t Game_filelength(int32_t fd)
+int32_t CCALL Game_fputs(const char *s, void *stream)
 {
-    off_t origpos, endpos;
-
-    origpos = lseek(fd, 0, SEEK_CUR);
-    if (origpos < 0) return -1;
-
-    endpos = lseek(fd, 0, SEEK_END);
-    lseek(fd, origpos, SEEK_SET);
-
-    return (endpos < 0 || endpos > 2147483647) ? -1 : endpos;
+    return fputs(s, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
 }
 
-uint32_t Game_dos_getvect(const int32_t intnum)
+char * CCALL Game_fgets(char *s, int32_t size, void *stream)
+{
+    return fgets(s, size, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+int32_t CCALL Game_ftime(watcom_timeb *tp)
+{
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    struct timeb tb;
+
+    ftime(&tb);
+
+    tp->time = (int32_t)tb.time;
+    tp->millitm = tb.millitm;
+    tp->timezone = tb.timezone;
+    tp->dstflag = tb.dstflag;
+#else
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+
+    tp->time = (int32_t)tv.tv_sec;
+    tp->millitm = tv.tv_usec / 1000;
+    tp->timezone = 0;
+    tp->dstflag = 0;
+#endif
+
+    return 0;
+}
+
+uint32_t CCALL Game_dos_getvect(const int32_t intnum)
 {
     return Game_InterruptTable[intnum & 0xff];
 }
 
-int32_t Game_lseek(int32_t fd, int32_t offset, int32_t whence)
-{
-    off_t curpos;
-
-    curpos = lseek(fd, offset, whence);
-
-    return (curpos < 0 || curpos > 2147483647) ? -1 : curpos;
-}
-
-#define WATCOM_BUFSIZ 0x1000
-
-void Game_setbuf(FILE *fp, char *buf)
-{
-    setvbuf(fp, buf, buf ? _IOFBF : _IONBF, WATCOM_BUFSIZ);
-}
-
-void Game_dos_setvect(const int32_t intnum, const uint32_t handler_low, const uint32_t handler_high)
+void CCALL Game_dos_setvect(const int32_t intnum, const uint32_t handler_low, const uint32_t handler_high)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "Setting interrupt vector: %i\n", intnum & 0xff);
@@ -118,27 +157,7 @@ void Game_dos_setvect(const int32_t intnum, const uint32_t handler_low, const ui
     Game_InterruptTable[intnum & 0xff] = handler_low;
 }
 
-int32_t Game_tell(int32_t handle)
-{
-    off_t curpos;
-
-    curpos = lseek(handle, 0, SEEK_CUR);
-
-    return (curpos < 0 || curpos > 2147483647) ? -1 : curpos;
-}
-
-int32_t Game_time(int32_t *tloc)
-{
-    time_t t;
-
-    t = time(NULL);
-
-    if (tloc != NULL) *tloc = t;
-
-    return t;
-}
-
-void Game_Sync(void)
+void CCALL Game_Sync(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "sync\n");
@@ -150,12 +169,13 @@ void Game_Sync(void)
 #endif
 }
 
-void Game_WaitTimerTicks(const int32_t ticks)
+static void Game_WaitVerticalRetraceTicks(const int32_t ticks);
+void CCALL Game_WaitTimerTicks(const int32_t ticks)
 {
     Game_WaitVerticalRetraceTicks(ticks);
 }
 
-void Game_WaitVerticalRetraceTicks(const int32_t ticks)
+static void Game_WaitVerticalRetraceTicks(const int32_t ticks)
 {
     uint32_t VSyncTick;
 
@@ -183,7 +203,7 @@ void Game_WaitVerticalRetraceTicks(const int32_t ticks)
 
 }
 
-void Game_WaitAfterVerticalRetrace(void)
+void CCALL Game_WaitAfterVerticalRetrace(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "WaitAfterVerticalRetrace\n");
@@ -192,7 +212,7 @@ void Game_WaitAfterVerticalRetrace(void)
     Game_WaitVerticalRetraceTicks(0);
 }
 
-void Game_WaitForVerticalRetrace(void)
+void CCALL Game_WaitForVerticalRetrace(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "WaitForVerticalRetrace\n");
@@ -201,7 +221,7 @@ void Game_WaitForVerticalRetrace(void)
     Game_WaitVerticalRetraceTicks(1);
 }
 
-void Game_WaitAfter2ndVerticalRetrace(void)
+void CCALL Game_WaitAfter2ndVerticalRetrace(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "WaitAfter2ndVerticalRetrace\n");
@@ -210,7 +230,7 @@ void Game_WaitAfter2ndVerticalRetrace(void)
     Game_WaitVerticalRetraceTicks(1);
 }
 
-void Game_WaitFor2ndVerticalRetrace(void)
+void CCALL Game_WaitFor2ndVerticalRetrace(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "WaitFor2ndVerticalRetrace\n");
@@ -219,140 +239,13 @@ void Game_WaitFor2ndVerticalRetrace(void)
     Game_WaitVerticalRetraceTicks(2);
 }
 
-#define WATCOM_O_RDONLY       0x0000  /* open for read only */
-#define WATCOM_O_WRONLY       0x0001  /* open for write only */
-#define WATCOM_O_RDWR         0x0002  /* open for read and write */
-#define WATCOM_O_APPEND       0x0010  /* writes done at end of file */
-#define WATCOM_O_CREAT        0x0020  /* create new file */
-#define WATCOM_O_TRUNC        0x0040  /* truncate existing file */
-#define WATCOM_O_NOINHERIT    0x0080  /* file is not inherited by child process */
-#define WATCOM_O_TEXT         0x0100  /* text file */
-#define WATCOM_O_BINARY       0x0200  /* binary file */
-#define WATCOM_O_EXCL         0x0400  /* exclusive open */
-
-int32_t Game_openFlags(int32_t flags)
-{
-    int newflags;
-
-#define NO_FLAG_DEFINED
-
-    newflags = 0;
-#if defined(_O_RDONLY) || defined(O_RDONLY)
-    #if !defined(O_RDONLY)
-        #define O_RDONLY _O_RDONLY
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_RDONLY) newflags |= O_RDONLY;
-#endif
-
-#if defined(_O_WRONLY) || defined(O_WRONLY)
-    #if !defined(O_WRONLY)
-        #define O_WRONLY _O_WRONLY
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_WRONLY) newflags |= O_WRONLY;
-#endif
-
-#if defined(_O_RDWR) || defined(O_RDWR)
-    #if !defined(O_RDWR)
-        #define O_RDWR _O_RDWR
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_RDWR) newflags |= O_RDWR;
-#endif
-
-#if defined(_O_APPEND) || defined(O_APPEND)
-    #if !defined(O_APPEND)
-        #define O_APPEND _O_APPEND
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_APPEND) newflags |= O_APPEND;
-#endif
-
-#if defined(_O_CREAT) || defined(O_CREAT)
-    #if !defined(O_CREAT)
-        #define O_CREAT _O_CREAT
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_CREAT) newflags |= O_CREAT;
-#endif
-
-#if defined(_O_TRUNC) || defined(O_TRUNC)
-    #if !defined(O_TRUNC)
-        #define O_TRUNC _O_TRUNC
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_TRUNC) newflags |= O_TRUNC;
-#endif
-
-#if defined(_O_NOINHERIT) || defined(O_NOINHERIT)
-    #if !defined(O_NOINHERIT)
-        #define O_NOINHERIT _O_NOINHERIT
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_NOINHERIT) newflags |= O_NOINHERIT;
-#endif
-
-#if defined(_O_TEXT) || defined(O_TEXT)
-    #if !defined(O_TEXT)
-        #define O_TEXT _O_TEXT
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_TEXT) newflags |= O_TEXT;
-#endif
-
-#if defined(_O_BINARY) || defined(O_BINARY)
-    #if !defined(O_BINARY)
-        #define O_BINARY _O_BINARY
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_BINARY) newflags |= O_BINARY;
-#endif
-
-#if defined(_O_EXCL) || defined(O_EXCL)
-    #if !defined(O_EXCL)
-        #define O_EXCL _O_EXCL
-    #endif
-
-    #undef NO_FLAG_DEFINED
-
-    if (flags & WATCOM_O_EXCL) newflags |= O_EXCL;
-#endif
-
-#if defined(NO_FLAG_DEFINED)
-    #error fcntl.h not included
-#endif
-
-#undef NO_FLAG_DEFINED
-
-    return newflags;
-}
-
 #define WATCOM_MAX_PATH   144 /* maximum length of full pathname */
 #define WATCOM_MAX_DRIVE   3  /* maximum length of drive component */
 #define WATCOM_MAX_DIR    130 /* maximum length of path component */
 #define WATCOM_MAX_FNAME   9  /* maximum length of file name component */
 #define WATCOM_MAX_EXT     5  /* maximum length of extension component */
 
-void Game_splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)
+void CCALL Game_splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)
 {
     char *firstcolon;
     char *lastslash;
@@ -414,7 +307,7 @@ void Game_splitpath(const char *path, char *drive, char *dir, char *fname, char 
             }
             else
             {
-                min = (firstcolon - path < WATCOM_MAX_DRIVE - 1)?(firstcolon - path):(WATCOM_MAX_DRIVE - 1);
+                min = (firstcolon - path < WATCOM_MAX_DRIVE - 1)?(int)(firstcolon - path):(WATCOM_MAX_DRIVE - 1);
 
                 strncpy(drive, path, min);
                 drive[min] = 0;
@@ -429,7 +322,7 @@ void Game_splitpath(const char *path, char *drive, char *dir, char *fname, char 
             }
             else
             {
-                min = (lastslash - firstcolon < WATCOM_MAX_DIR - 1)?(lastslash - firstcolon):(WATCOM_MAX_DIR - 1);
+                min = (lastslash - firstcolon < WATCOM_MAX_DIR - 1)?(int)(lastslash - firstcolon):(WATCOM_MAX_DIR - 1);
 
                 strncpy(dir, firstcolon, min);
                 dir[min] = 0;
@@ -444,7 +337,7 @@ void Game_splitpath(const char *path, char *drive, char *dir, char *fname, char 
             }
             else
             {
-                min = (lastdot - lastslash < WATCOM_MAX_FNAME - 1)?(lastdot - lastslash):(WATCOM_MAX_FNAME - 1);
+                min = (lastdot - lastslash < WATCOM_MAX_FNAME - 1)?(int)(lastdot - lastslash):(WATCOM_MAX_FNAME - 1);
 
                 strncpy(fname, lastslash, min);
                 fname[min] = 0;
@@ -460,7 +353,7 @@ void Game_splitpath(const char *path, char *drive, char *dir, char *fname, char 
             }
             else
             {
-                min = (firstzero - lastdot < WATCOM_MAX_EXT - 1)?(firstzero - lastdot):(WATCOM_MAX_EXT - 1);
+                min = (firstzero - lastdot < WATCOM_MAX_EXT - 1)?(int)(firstzero - lastdot):(WATCOM_MAX_EXT - 1);
 
                 strncpy(ext, lastdot, min);
                 ext[min] = 0;

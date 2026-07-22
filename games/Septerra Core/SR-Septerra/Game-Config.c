@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2024 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -28,12 +28,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CLIB.h"
+#include "platform.h"
 
 #if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
 #define _WIN32
 #endif
 
-#if defined(PANDORA) || defined(PYRA)
+#if defined(PYRA)
 #define CONFIG_FILE "../Septerra.cfg"
 #else
 #define CONFIG_FILE "Septerra.cfg"
@@ -43,7 +44,7 @@ extern int32_t Patch_PreselectCharacters;
 
 static char *trim_string(char *buf)
 {
-    int len;
+    size_t len;
 
     while (*buf == ' ') buf++;
 
@@ -58,19 +59,19 @@ static char *trim_string(char *buf)
     return buf;
 }
 
-void ReadConfiguration(void)
+void ReadConfiguration(int argc, char *argv[])
 {
     FILE *f;
     char buf[8192];
-    char *str, *param;
+    char *str, *param, *config_file;
     int items, num_int;
 
-    Game_Installation = 0;
+    Game_Installation = 1;
 
     Intro_Play = 1;
 
     Display_Mode = 0;
-    Display_VSync = 0;
+    Display_VSync = 1;
     Display_Width = 0;
     Display_Height = 0;
     Display_Resizable = 0;
@@ -104,13 +105,37 @@ void ReadConfiguration(void)
 
     CPU_SleepMode = 0;
 
-#ifdef _WIN32
-    f = fopen(CONFIG_FILE, "rt");
-#else
-    if (!CLIB_FindFile(CONFIG_FILE, buf)) return;
+    config_file = NULL;
+    if (argc > 1)
+    {
+        for (argc--, argv++; argc != 0; argc--, argv++)
+        {
+            if (strncmp(*argv, "--config-file", 13) == 0)
+            {
+                param = *argv + 14; // skip space or equals
+                param = trim_string(param);
+                if (*param != 0)
+                {
+                    config_file = param;
+                }
+            }
+        }
+    }
 
-    f = fopen(buf, "rt");
+    if (config_file != NULL)
+    {
+        f = fopen(config_file, "rt");
+    }
+    else
+    {
+#ifdef _WIN32
+        f = fopen(CONFIG_FILE, "rt");
+#else
+        if (!CLIB_FindFile(CONFIG_FILE, buf)) return;
+
+        f = fopen(buf, "rt");
 #endif
+    }
     if (f == NULL) return;
 
 
@@ -442,7 +467,7 @@ void ReadConfiguration(void)
             }
 
         }
-#if !defined(PANDORA) && !defined(PYRA)
+#if !defined(PYRA)
         else if ( strncasecmp(str, "Input_", 6) == 0 ) // str begins with "Input_"
         {
             // input settings

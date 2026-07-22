@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2024 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -27,14 +27,17 @@
 #define _DEFAULT_SOURCE 1
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#ifdef DEBUG_KERNEL32
 #include <inttypes.h>
-#include "WinApi-kernel32.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/stat.h>
 #include <errno.h>
+#if !defined(_MSC_VER)
+#include <strings.h>
+#endif
 
 #if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
 #define _WIN32
@@ -48,6 +51,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <direct.h>
 #else
 #define USE_OLD_GETTIME 0
 
@@ -79,6 +83,8 @@ static clockid_t monotonic_clock_id;
 #endif
 
 #endif
+#include "WinApi-kernel32.h"
+#include "Game-Memory.h"
 
 
 #ifndef _WIN32
@@ -121,8 +127,13 @@ static clockid_t monotonic_clock_id;
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
-#define PSEUDO_HANDLE_CURRENT_PROCESS ((PTR32(void))(uint32_t)-1)
-#define PSEUDO_HANDLE_CURRENT_THREAD ((PTR32(void))(uint32_t)-2)
+#ifdef PTROFS_64BIT
+#define PSEUDO_HANDLE_CURRENT_PROCESS ((void *)(pointer_offset + 0xfffffffful))
+#define PSEUDO_HANDLE_CURRENT_THREAD ((void *)(pointer_offset + 0xfffffffeul))
+#else
+#define PSEUDO_HANDLE_CURRENT_PROCESS ((void *)0xfffffffful)
+#define PSEUDO_HANDLE_CURRENT_THREAD ((void *)0xfffffffeul)
+#endif
 
 
 #if !defined(_WIN32)
@@ -143,7 +154,7 @@ typedef struct _large_integer {
 } large_integer;
 
 #pragma pack(2)
-typedef struct __attribute__ ((__packed__)) _systemtime {
+typedef struct PACKED _systemtime {
     uint16_t wYear;
     uint16_t wMonth;
     uint16_t wDayOfWeek;
@@ -279,7 +290,11 @@ static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char
 
     // file's creation time and date
     dt_result = ((int64_t) filestat->st_ctime) * 10000000;
+#if defined(__APPLE__)
+    dt_result += (filestat->st_ctimensec / 100) & ~1; // set least significant bit to zero to indicate system time
+#else
     dt_result += (filestat->st_ctim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
+#endif
     dt_result += EPOCH_TIME;
 
     buffer->ftCreationTime.dwLowDateTime = (uint32_t) dt_result;
@@ -287,7 +302,11 @@ static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char
 
     // file's last access time and date
     dt_result = ((int64_t) filestat->st_atime) * 10000000;
+#if defined(__APPLE__)
+    dt_result += (filestat->st_atimensec / 100) & ~1; // set least significant bit to zero to indicate system time
+#else
     dt_result += (filestat->st_atim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
+#endif
     dt_result += EPOCH_TIME;
 
     buffer->ftLastAccessTime.dwLowDateTime = (uint32_t) dt_result;
@@ -295,7 +314,11 @@ static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char
 
     // file's modification time and date
     dt_result = ((int64_t) filestat->st_mtime) * 10000000;
+#if defined(__APPLE__)
+    dt_result += (filestat->st_mtimensec / 100) & ~1; // set least significant bit to zero to indicate system time
+#else
     dt_result += (filestat->st_mtim.tv_nsec / 100) & ~1; // set least significant bit to zero to indicate system time
+#endif
     dt_result += EPOCH_TIME;
 
     buffer->ftLastWriteTime.dwLowDateTime = (uint32_t) dt_result;
@@ -318,7 +341,7 @@ static void Conv_find(win32_find_data *buffer, struct stat *filestat, const char
 
 #endif
 
-uint32_t Beep_c(uint32_t dwFreq, uint32_t dwDuration)
+uint32_t CCALL Beep_c(uint32_t dwFreq, uint32_t dwDuration)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("Beep: %i, %i\n", dwFreq, dwDuration);
@@ -351,7 +374,7 @@ uint32_t Beep_c(uint32_t dwFreq, uint32_t dwDuration)
 #endif
 }
 
-uint32_t CloseHandle_c(void *hObject)
+uint32_t CCALL CloseHandle_c(void *hObject)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("CloseHandle: 0x%" PRIxPTR "\n", (uintptr_t) hObject);
@@ -372,14 +395,14 @@ uint32_t CloseHandle_c(void *hObject)
     switch (((handle)hObject)->handle_type)
     {
         case HT_FILE:
-#define hFile ((file_handle)hObject)
+#define hFile ((file_handle)(void *)hObject)
 
             if (hFile->f != NULL)
             {
                 fclose((FILE *)hFile->f);
             }
 
-            free(hFile);
+            x86_free(hFile);
 
             return 1;
 #undef hFile
@@ -395,7 +418,7 @@ uint32_t CloseHandle_c(void *hObject)
 #endif
             }
 
-            free(hPipe);
+            x86_free(hPipe);
 
             return 1;
 #undef hPipe
@@ -408,7 +431,7 @@ uint32_t CloseHandle_c(void *hObject)
 //    return CloseHandle((HANDLE)hObject);
 }
 
-uint32_t CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
+uint32_t CCALL CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("CreateDirectoryA: %s, 0x%" PRIxPTR "\n", lpPathName, (uintptr_t)lpSecurityAttributes);
@@ -421,13 +444,7 @@ uint32_t CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
     }
 
 #ifdef _WIN32
-    if (0 !=
-#if defined(__MINGW32__)
-        mkdir(lpPathName)
-#else
-        mkdir(lpPathName, 0777)
-#endif
-    )
+    if (0 != mkdir(lpPathName))
 #else
     char buf[8192];
 
@@ -454,7 +471,7 @@ uint32_t CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
     return 1;
 }
 
-void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t dwShareMode, void *lpSecurityAttributes, uint32_t dwCreationDistribution, uint32_t dwFlagsAndAttributes, void *hTemplateFile)
+void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t dwShareMode, void *lpSecurityAttributes, uint32_t dwCreationDistribution, uint32_t dwFlagsAndAttributes, void *hTemplateFile)
 {
     int file_exists;
     char mode[4];
@@ -474,7 +491,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
         eprintf("error\n");
 #endif
         Winapi_SetLastError(ERROR_INVALID_PARAMETER);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     if (dwDesiredAccess == 0 || hTemplateFile != 0)
@@ -483,7 +500,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
         eprintf("error\n");
 #endif
         Winapi_SetLastError(ERROR_NOT_SUPPORTED);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
 #ifdef _WIN32
@@ -504,7 +521,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
                 eprintf("error\n");
 #endif
                 Winapi_SetLastError(ERROR_FILE_EXISTS);
-                return INVALID_HANDLE_VALUE;
+                return INVALID_HANDLE32_VALUE;
             }
 
             mode[0] = 'w';
@@ -529,7 +546,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
                 eprintf("error\n");
 #endif
                 Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-                return INVALID_HANDLE_VALUE;
+                return INVALID_HANDLE32_VALUE;
             }
 
             if (dwDesiredAccess & GENERIC_READ)
@@ -586,7 +603,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
                     eprintf("error\n");
 #endif
                     Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-                    return INVALID_HANDLE_VALUE;
+                    return INVALID_HANDLE32_VALUE;
                 }
 
                 mode[0] = 'w';
@@ -605,7 +622,7 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
         eprintf("error\n");
 #endif
         Winapi_SetLastError(ERROR_INVALID_PARAMETER);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     ret = Winapi_AllocHandle();
@@ -626,12 +643,12 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
 #endif
     if (ret->fh.f == NULL)
     {
-        free(ret);
+        x86_free(ret);
 #ifdef DEBUG_KERNEL32
         eprintf("error\n");
 #endif
         Winapi_SetLastError(ERROR_ACCESS_DENIED);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     if (SeekToStart)
@@ -645,14 +662,14 @@ void *CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uint32_t d
     return ret;
 }
 
-void *CreateMutexA_c(void *lpMutexAttributes, uint32_t bInitialOwner, const char *lpName)
+void * CCALL CreateMutexA_c(void *lpMutexAttributes, uint32_t bInitialOwner, const char *lpName)
 {
     // Septerra Core doesn't use the mutex - it only checks last error for ERROR_ALREADY_EXISTS, to prevent two instances of the application to run
     Winapi_SetLastError(ERROR_ACCESS_DENIED);
     return NULL;
 }
 
-uint32_t CreatePipe_c(PTR32(void) *hReadPipe, PTR32(void) *hWritePipe, void *lpPipeAttributes, uint32_t nSize)
+uint32_t CCALL CreatePipe_c(PTR32(void) *hReadPipe, PTR32(void) *hWritePipe, void *lpPipeAttributes, uint32_t nSize)
 {
     handle hread, hwrite;
     int ret;
@@ -687,7 +704,7 @@ uint32_t CreatePipe_c(PTR32(void) *hReadPipe, PTR32(void) *hWritePipe, void *lpP
         hwrite = Winapi_AllocHandle();
         if (hwrite == NULL)
         {
-            free(hread);
+            x86_free(hread);
 #ifdef DEBUG_KERNEL32
         eprintf("error\n");
 #endif
@@ -716,8 +733,8 @@ uint32_t CreatePipe_c(PTR32(void) *hReadPipe, PTR32(void) *hWritePipe, void *lpP
 
         if (ret == 0)
         {
-            free(hwrite);
-            free(hread);
+            x86_free(hwrite);
+            x86_free(hread);
 #ifdef DEBUG_KERNEL32
             eprintf("error\n");
 #endif
@@ -739,49 +756,69 @@ uint32_t CreatePipe_c(PTR32(void) *hReadPipe, PTR32(void) *hWritePipe, void *lpP
     exit(1);
 }
 
-void DeleteCriticalSection_c(void *lpCriticalSection)
+void CCALL DeleteCriticalSection_c(void *lpCriticalSection)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("DeleteCriticalSection: 0x%" PRIxPTR "\n", (uintptr_t)lpCriticalSection);
 #endif
 
 #ifdef _WIN32
-    DeleteCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    if (sizeof(void *) == 4)
+    {
+        DeleteCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    }
+    else
+    {
+        if (*(LPCRITICAL_SECTION *)lpCriticalSection != NULL)
+        {
+            DeleteCriticalSection(*(LPCRITICAL_SECTION *)lpCriticalSection);
+            free(*(LPCRITICAL_SECTION *)lpCriticalSection);
+            *(LPCRITICAL_SECTION *)lpCriticalSection = NULL;
+        }
+    }
 #else
     if (*(pthread_mutex_t **)lpCriticalSection != NULL)
     {
         pthread_mutex_destroy(*(pthread_mutex_t **)lpCriticalSection);
+        free(*(pthread_mutex_t **)lpCriticalSection);
         *(pthread_mutex_t **)lpCriticalSection = NULL;
     }
 #endif
 }
 
-uint32_t DeleteFileA_c(const char *lpFileName)
+uint32_t CCALL DeleteFileA_c(const char *lpFileName)
 {
     eprintf("Unimplemented: %s\n", "DeleteFileA");
     exit(1);
 //    return DeleteFileA(lpFileName);
 }
 
-void EnterCriticalSection_c(void *lpCriticalSection)
+void CCALL EnterCriticalSection_c(void *lpCriticalSection)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("EnterCriticalSection: 0x%" PRIxPTR "\n", (uintptr_t)lpCriticalSection);
 #endif
 
 #ifdef _WIN32
-    EnterCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    if (sizeof(void *) == 4)
+    {
+        EnterCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    }
+    else
+    {
+        EnterCriticalSection(*(LPCRITICAL_SECTION *)lpCriticalSection);
+    }
 #else
     pthread_mutex_lock(*(pthread_mutex_t **)lpCriticalSection);
 #endif
 }
 
-void ExitProcess_c(uint32_t uExitCode)
+void CCALL ExitProcess_c(uint32_t uExitCode)
 {
     exit(uExitCode);
 }
 
-uint32_t FileTimeToLocalFileTime_c(const void *lpFileTime, void *lpLocalFileTime)
+uint32_t CCALL FileTimeToLocalFileTime_c(const void *lpFileTime, void *lpLocalFileTime)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("FileTimeToLocalFileTime\n");
@@ -803,7 +840,7 @@ uint32_t FileTimeToLocalFileTime_c(const void *lpFileTime, void *lpLocalFileTime
 #endif
 }
 
-uint32_t FileTimeToSystemTime_c(const void *lpFileTime, void *lpSystemTime)
+uint32_t CCALL FileTimeToSystemTime_c(const void *lpFileTime, void *lpSystemTime)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("FileTimeToSystemTime\n");
@@ -855,7 +892,7 @@ uint32_t FileTimeToSystemTime_c(const void *lpFileTime, void *lpSystemTime)
 #endif
 }
 
-uint32_t FindClose_c(void *hFindFile)
+uint32_t CCALL FindClose_c(void *hFindFile)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("FindClose: 0x%" PRIxPTR "\n", (uintptr_t) hFindFile);
@@ -903,12 +940,12 @@ uint32_t FindClose_c(void *hFindFile)
         ((handle)hFindFile)->sh.d = NULL;
     }
 
-    free(hFindFile);
+    x86_free(hFindFile);
 
     return 1;
 }
 
-void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
+void * CCALL FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
 {
     handle ret;
 
@@ -919,14 +956,14 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     if ((lpFileName == NULL) || (lpFindFileData == NULL))
     {
         Winapi_SetLastError(ERROR_INVALID_PARAMETER);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
 #ifdef _WIN32
     ret = Winapi_AllocHandle();
     if (ret == NULL)
     {
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     ret->handle_type = HT_SEARCH;
@@ -934,8 +971,8 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
 
     if (ret->sh.d == INVALID_HANDLE_VALUE)
     {
-        free(ret);
-        return INVALID_HANDLE_VALUE;
+        x86_free(ret);
+        return INVALID_HANDLE32_VALUE;
     }
 
     return ret;
@@ -971,13 +1008,13 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         if (!CLIB_FindFile(lpFileName, buf))
         {
             Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
 
         if (0 != stat(buf, &filestat))
         {
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
 
         if (S_ISDIR(filestat.st_mode))
@@ -987,7 +1024,7 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             if (dirinfo == NULL)
             {
                 Winapi_SetLastError(ERROR_ACCESS_DENIED);
-                return INVALID_HANDLE_VALUE;
+                return INVALID_HANDLE32_VALUE;
             }
 
             direntry = readdir(dirinfo);
@@ -995,7 +1032,7 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             {
                 closedir(dirinfo);
                 Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-                return INVALID_HANDLE_VALUE;
+                return INVALID_HANDLE32_VALUE;
             }
         }
         else
@@ -1049,14 +1086,14 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         if (!CLIB_FindFile(orig_directory, buf))
         {
             Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
 
         dirinfo = opendir(buf);
         if (dirinfo == NULL)
         {
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
 
         // copy pattern to orig_directory
@@ -1081,7 +1118,7 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         {
             closedir(dirinfo);
             Winapi_SetLastError(ERROR_FILE_NOT_FOUND);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
     }
 
@@ -1091,16 +1128,16 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
     {
         if (dirinfo != NULL) closedir(dirinfo);
         Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     state = (find_file_state *) malloc(sizeof(find_file_state));
     if (state == NULL)
     {
-        free(ret);
+        x86_free(ret);
         if (dirinfo != NULL) closedir(dirinfo);
         Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return INVALID_HANDLE_VALUE;
+        return INVALID_HANDLE32_VALUE;
     }
 
     ret->handle_type = HT_SEARCH;
@@ -1117,10 +1154,10 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
         if (state->directory == NULL)
         {
             free(state);
-            free(ret);
+            x86_free(ret);
             if (dirinfo != NULL) closedir(dirinfo);
             Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
 
         if (readdirtype)
@@ -1131,10 +1168,10 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             {
                 free(state->directory);
                 free(state);
-                free(ret);
+                x86_free(ret);
                 if (dirinfo != NULL) closedir(dirinfo);
                 Winapi_SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                return INVALID_HANDLE_VALUE;
+                return INVALID_HANDLE32_VALUE;
             }
         }
 
@@ -1145,10 +1182,10 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
             if (state->filename != NULL) free(state->filename);
             free(state->directory);
             free(state);
-            free(ret);
+            x86_free(ret);
             if (dirinfo != NULL) closedir(dirinfo);
             Winapi_SetLastError(ERROR_ACCESS_DENIED);
-            return INVALID_HANDLE_VALUE;
+            return INVALID_HANDLE32_VALUE;
         }
     }
 
@@ -1163,7 +1200,7 @@ void *FindFirstFileA_c(const char *lpFileName, void *lpFindFileData)
 #endif
 }
 
-uint32_t FindNextFileA_c(void *hFindFile, void *lpFindFileData)
+uint32_t CCALL FindNextFileA_c(void *hFindFile, void *lpFindFileData)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("FindNextFileA: 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t) hFindFile, (uintptr_t) lpFindFileData);
@@ -1247,7 +1284,7 @@ uint32_t FindNextFileA_c(void *hFindFile, void *lpFindFileData)
 #endif
 }
 
-void *GetCurrentProcess_c(void)
+void * CCALL GetCurrentProcess_c(void)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("GetCurrentProcess\n");
@@ -1257,7 +1294,7 @@ void *GetCurrentProcess_c(void)
     return PSEUDO_HANDLE_CURRENT_PROCESS;
 }
 
-void *GetCurrentThread_c(void)
+void * CCALL GetCurrentThread_c(void)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("GetCurrentThread\n");
@@ -1267,9 +1304,9 @@ void *GetCurrentThread_c(void)
     return PSEUDO_HANDLE_CURRENT_THREAD;
 }
 
-uint32_t GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char *lpBuffer, PTR32(char) *lpFilePart)
+uint32_t CCALL GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char *lpBuffer, PTR32(char) *lpFilePart)
 {
-    size_t len;
+    uint32_t len;
     char *p1, *p2;
 
 #ifdef DEBUG_KERNEL32
@@ -1282,11 +1319,11 @@ uint32_t GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char
         return 0;
     }
 
-    len = strlen(lpFileName);
+    len = (uint32_t)strlen(lpFileName);
 
     if (len + 1 > nBufferLength)
     {
-        return len + 1;
+        return (uint32_t)(len + 1);
     }
 
     if (lpBuffer == NULL)
@@ -1323,15 +1360,15 @@ uint32_t GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength, char
         *lpFilePart = p1;
     }
 
-    return len;
+    return (uint32_t)len;
 }
 
-uint32_t GetLastError_c(void)
+uint32_t CCALL GetLastError_c(void)
 {
     return Winapi_GetLastError();
 }
 
-uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName)
+uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName)
 {
     FILE *file;
     unsigned int remaining_size, correct_appname;
@@ -1392,7 +1429,7 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
         if (default_length < nSize)
         {
             strcpy(lpReturnedString, lpDefault);
-            return default_length;
+            return (uint32_t)default_length;
         }
         else
         {
@@ -1438,7 +1475,7 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
                 {
                     strcpy(lpReturnedString, (char *) &(buf[1]));
                     lpReturnedString += length + 1;
-                    remaining_size -= length + 1;
+                    remaining_size -= (unsigned int)(length + 1);
                 }
                 else
                 {
@@ -1498,7 +1535,7 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
                     {
                         strcpy(lpReturnedString, (char *) &buf);
                         lpReturnedString += length + 1;
-                        remaining_size -= length + 1;
+                        remaining_size -= (unsigned int)(length + 1);
                     }
                     else
                     {
@@ -1547,7 +1584,7 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
                     if (length < nSize)
                     {
                         strcpy(lpReturnedString, keyvalue);
-                        return length;
+                        return (uint32_t)length;
                     }
                     else
                     {
@@ -1597,7 +1634,7 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
         if (default_length < nSize)
         {
             strcpy(lpReturnedString, lpDefault);
-            return default_length;
+            return (uint32_t)default_length;
         }
         else
         {
@@ -1608,14 +1645,32 @@ uint32_t GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName
     }
 }
 
-void InitializeCriticalSection_c(void *lpCriticalSection)
+void CCALL InitializeCriticalSection_c(void *lpCriticalSection)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("InitializeCriticalSection: 0x%" PRIxPTR "\n", (uintptr_t)lpCriticalSection);
 #endif
 
 #ifdef _WIN32
-    InitializeCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    if (sizeof(void *) == 4)
+    {
+        InitializeCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    }
+    else
+    {
+        LPCRITICAL_SECTION critical_section;
+
+        critical_section = (LPCRITICAL_SECTION)malloc(sizeof(CRITICAL_SECTION));
+        if (critical_section == NULL)
+        {
+            eprintf("InitializeCriticalSection: critical section not created\n");
+            exit(6);
+        }
+
+        InitializeCriticalSection(critical_section);
+
+        *(LPCRITICAL_SECTION *)lpCriticalSection = critical_section;
+    }
 #else
     pthread_mutexattr_t attr;
     pthread_mutex_t *mutex;
@@ -1638,20 +1693,27 @@ InitializeCriticalSection_error:
 #endif
 }
 
-void LeaveCriticalSection_c(void *lpCriticalSection)
+void CCALL LeaveCriticalSection_c(void *lpCriticalSection)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("LeaveCriticalSection: 0x%" PRIxPTR "\n", (uintptr_t)lpCriticalSection);
 #endif
 
 #ifdef _WIN32
-    LeaveCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    if (sizeof(void *) == 4)
+    {
+        LeaveCriticalSection((LPCRITICAL_SECTION)lpCriticalSection);
+    }
+    else
+    {
+        LeaveCriticalSection(*(LPCRITICAL_SECTION *)lpCriticalSection);
+    }
 #else
     pthread_mutex_unlock(*(pthread_mutex_t **)lpCriticalSection);
 #endif
 }
 
-uint32_t QueryPerformanceCounter_c(void *lpPerformanceCount)
+uint32_t CCALL QueryPerformanceCounter_c(void *lpPerformanceCount)
 {
 #ifdef _WIN32
     return QueryPerformanceCounter((LARGE_INTEGER *)lpPerformanceCount);
@@ -1662,7 +1724,7 @@ uint32_t QueryPerformanceCounter_c(void *lpPerformanceCount)
 #endif
 }
 
-uint32_t QueryPerformanceFrequency_c(void *lpFrequency)
+uint32_t CCALL QueryPerformanceFrequency_c(void *lpFrequency)
 {
 #ifdef _WIN32
     return QueryPerformanceFrequency((LARGE_INTEGER *)lpFrequency);
@@ -1675,7 +1737,7 @@ uint32_t QueryPerformanceFrequency_c(void *lpFrequency)
 #endif
 }
 
-uint32_t ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, uint32_t *lpNumberOfBytesRead, void *lpOverlapped)
+uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, uint32_t *lpNumberOfBytesRead, void *lpOverlapped)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("ReadFile: 0x%" PRIxPTR ", %i\n", (uintptr_t) hFile, nNumberOfBytesToRead);
@@ -1772,7 +1834,7 @@ uint32_t ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, 
                     clearerr(f);
                 }
                 bytesreadtotal += bytesread;
-                bytes_to_read -= bytesread;
+                bytes_to_read -= (uint32_t)bytesread;
                 lpBuffer = (void *) (((uintptr_t) lpBuffer) + bytesread);
             }
         }
@@ -1781,7 +1843,7 @@ uint32_t ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, 
         {
             if (lpNumberOfBytesRead != NULL)
             {
-                *lpNumberOfBytesRead = bytesreadtotal;
+                *lpNumberOfBytesRead = (uint32_t)bytesreadtotal;
             }
 
             return 1;
@@ -1805,7 +1867,7 @@ uint32_t ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesToRead, 
     exit(1);
 }
 
-uint32_t SetErrorMode_c(uint32_t uMode)
+uint32_t CCALL SetErrorMode_c(uint32_t uMode)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("SetErrorMode: 0x%x\n", uMode);
@@ -1814,14 +1876,14 @@ uint32_t SetErrorMode_c(uint32_t uMode)
     return 0;
 }
 
-uint32_t SetFilePointer_c(void *hFile, uint32_t lDistanceToMove, uint32_t *lpDistanceToMoveHigh, uint32_t dwMoveMethod)
+uint32_t CCALL SetFilePointer_c(void *hFile, uint32_t lDistanceToMove, uint32_t *lpDistanceToMoveHigh, uint32_t dwMoveMethod)
 {
     eprintf("Unimplemented: %s\n", "SetFilePointer");
     exit(1);
 //    return SetFilePointer((HANDLE)hFile, lDistanceToMove, (PLONG)lpDistanceToMoveHigh, dwMoveMethod);
 }
 
-uint32_t SetPriorityClass_c(void *hProcess, uint32_t fdwPriority)
+uint32_t CCALL SetPriorityClass_c(void *hProcess, uint32_t fdwPriority)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("SetPriorityClass: 0x%" PRIxPTR ", %i\n", (uintptr_t) hProcess, fdwPriority);
@@ -1841,7 +1903,7 @@ uint32_t SetPriorityClass_c(void *hProcess, uint32_t fdwPriority)
     exit(1);
 }
 
-uint32_t SetThreadPriority_c(void *hThread, int32_t nPriority)
+uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("SetThreadPriority: 0x%" PRIxPTR ", %i\n", (uintptr_t) hThread, nPriority);
@@ -1866,7 +1928,7 @@ uint32_t SetThreadPriority_c(void *hThread, int32_t nPriority)
     exit(1);
 }
 
-void Sleep_c(uint32_t cMilliseconds)
+void CCALL Sleep_c(uint32_t cMilliseconds)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("Sleep: %i\n", cMilliseconds);
@@ -1897,7 +1959,7 @@ void Sleep_c(uint32_t cMilliseconds)
 #endif
 }
 
-uint32_t WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesToWrite, uint32_t *lpNumberOfBytesWritten, void *lpOverlapped)
+uint32_t CCALL WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesToWrite, uint32_t *lpNumberOfBytesWritten, void *lpOverlapped)
 {
 #ifdef DEBUG_KERNEL32
     eprintf("WriteFile: 0x%" PRIxPTR ", %i\n", (uintptr_t) hFile, nNumberOfBytesToWrite);
@@ -1988,7 +2050,7 @@ uint32_t WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesT
                     clearerr(f);
                 }
                 byteswrittentotal += byteswritten;
-                bytes_to_write -= byteswritten;
+                bytes_to_write -= (uint32_t)byteswritten;
                 lpBuffer = (void *) (((uintptr_t) lpBuffer) + byteswritten);
             }
         }
@@ -1997,7 +2059,7 @@ uint32_t WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOfBytesT
         {
             if (lpNumberOfBytesWritten != NULL)
             {
-                *lpNumberOfBytesWritten = byteswrittentotal;
+                *lpNumberOfBytesWritten = (uint32_t)byteswrittentotal;
             }
 
             return 1;

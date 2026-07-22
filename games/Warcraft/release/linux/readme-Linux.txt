@@ -1,5 +1,5 @@
 Warcraft: Orcs & Humans for Linux (x86)
-Version 1.4.0
+Version 1.4.2
 
 Original DOS Warcraft CD version is required for playing.
 (version from GOG.com can be used for playing)
@@ -7,11 +7,8 @@ Original DOS Warcraft CD version is required for playing.
 Libraries
 ---------
 
-The game (SDL2 version) requires following 32-bit libraries: SDL2, SDL2_mixer
+The game requires following 32-bit libraries: SDL2, SDL2_mixer
 On debian based distributions these libraries are in following packages: libsdl2-2.0-0:i386 libsdl2-mixer-2.0-0:i386
-
-The game (SDL1 version) requires following 32-bit libraries: SDL, SDL_mixer, OpenGL
-On debian based distributions these libraries are in following packages: libsdl1.2debian:i386 libsdl-mixer1.2:i386 libgl1:i386
 
 Some midi plugins may require additional libraries.
 
@@ -22,7 +19,7 @@ Installation
 Put files from this archive into the installed game's directory.
 
 Simple instructions:
-1) install Warcraft on your PC
+1) install Warcraft on your PC (or copy installed game from another computer)
 2) copy the files from this archive into the game's directory
 3) run the game using Warcraft.sh
 
@@ -55,6 +52,7 @@ libADLMIDI requires no additional files for MIDI playback,
 WildMIDI requires GUS patches for MIDI playback,
 BASSMIDI requires a soundfont for MIDI playback,
 libADLMIDI uses OPL3 emulator for MIDI playback.
+Music can be played on MT-32 synth using ALSA sequencer.
 
 ALSA sequencer can detect usable synth automatically or it can be selected in the configuration file.
 
@@ -111,6 +109,14 @@ Source code is available on GitHub: https://github.com/M-HT/SR
 
 Changes
 -------
+
+v1.4.2 (2026-05-24)
+* use newer library versions
+* bug fixes
+
+v1.4.1 (2024-12-16)
+* add option to play music on MT-32 synth
+* bug fixes
 
 v1.4.0 (2024-09-21)
 * add option to use higher quality audio resampling

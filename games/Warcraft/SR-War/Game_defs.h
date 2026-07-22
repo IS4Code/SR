@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -25,13 +25,8 @@
 #if !defined(_GAME_DEFS_H_INCLUDED_)
 #define _GAME_DEFS_H_INCLUDED_
 
-#ifdef USE_SDL2
-    #include <SDL2/SDL.h>
-    #include <SDL2/SDL_mixer.h>
-#else
-    #include <SDL/SDL.h>
-    #include <SDL/SDL_mixer.h>
-#endif
+#include <SDL.h>
+#include <SDL_mixer.h>
 #include <limits.h>
 #include "ptr32.h"
 
@@ -55,12 +50,21 @@
 #define GAME_MAX_SCALE_FACTOR (6)
 
 
-#if !defined(MAX_PATH)
-    #if defined(_POSIX_PATH_MAX)
-        #define MAX_PATH _POSIX_PATH_MAX
-    #else
-        #define MAX_PATH 256
-    #endif
+#if !defined(MAX_PATH) || MAX_PATH < 260
+    #undef MAX_PATH
+    #define MAX_PATH 260
+#endif
+#if defined(_MAX_PATH) && _MAX_PATH > MAX_PATH
+    #undef MAX_PATH
+    #define MAX_PATH _MAX_PATH
+#endif
+#if defined(_POSIX_PATH_MAX) && _POSIX_PATH_MAX > MAX_PATH
+    #undef MAX_PATH
+    #define MAX_PATH _POSIX_PATH_MAX
+#endif
+#if defined(PATH_MAX) && PATH_MAX > MAX_PATH
+    #undef MAX_PATH
+    #define MAX_PATH PATH_MAX
 #endif
 
 
@@ -86,6 +90,40 @@
 #define EC_DELAY				(9)
 
 
+#if defined(__GNUC__)
+    #define INLINE __inline__
+    #define NORETURN __attribute__ ((__noreturn__))
+    #define PACKED __attribute__ ((__packed__))
+    #if defined(__i386) || (defined(__x86_64) && defined(_WIN32))
+        #define CCALL __attribute__ ((__cdecl__))
+    #else
+        #define CCALL
+    #endif
+#elif defined(_MSC_VER)
+    #define INLINE __inline
+    #define NORETURN __declspec(noreturn)
+    #define PACKED
+    #define CCALL __cdecl
+    #define chdir _chdir
+    #define getcwd _getcwd
+    #define lseek _lseek
+    #define open _open
+    #define strcasecmp _stricmp
+    #define strdup _strdup
+    #define strncasecmp _strnicmp
+    #define tzset _tzset
+    #define unlink _unlink
+    #if _MSC_VER >= 1900
+        #pragma comment(lib, "legacy_stdio_definitions.lib")
+    #endif
+#else
+    #define INLINE inline
+    #define NORETURN
+    #define PACKED
+    #define CCALL
+#endif
+
+
 #pragma pack(4)
 
 typedef union _Game_register_ {
@@ -96,6 +134,7 @@ typedef union _Game_register_ {
     struct {
         uint8_t l, h, l2, h2;
     } b;
+    PTR32(void) p;
 } Game_register;
 
 typedef struct _Game_SREGS_ {
@@ -145,10 +184,20 @@ typedef struct _Game_BYTEREGS_ {
   uint32_t cflag;
 } Game_BYTEREGS;
 
+typedef struct _Game_PTR32REGS_ {
+  PTR32(void) eax;
+  PTR32(void) ebx;
+  PTR32(void) ecx;
+  PTR32(void) edx;
+  PTR32(void) esi;
+  PTR32(void) edi;
+} Game_PTR32REGS;
+
 typedef union _Game_REGS_ {
   Game_DWORDREGS d;
   Game_WORDREGS w;
   Game_BYTEREGS h;
+  Game_PTR32REGS p;
 } Game_REGS;
 
 
@@ -176,7 +225,7 @@ typedef struct _Game_sample {
     uint32_t len, len_cvt, time;
     int32_t playback_rate;	/* Hz */
     uint32_t orig_data[7];
-    uint8_t data[];
+    uint8_t data;
 } Game_sample;
 
 typedef struct _AIL_sample AIL_sample;

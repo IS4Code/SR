@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2022 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,25 +22,28 @@
  *
  */
 
+#ifdef DEBUG_CLIB
 #include <inttypes.h>
+#endif
 #include "CLIB-asm-x86.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <malloc.h>
 
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 
-void *_alloca_probe_c(uint32_t size)
+void * CCALL _alloca_probe_c(uint32_t size)
 {
 #ifdef DEBUG_CLIB
     eprintf("_alloca_probe: %i\n", size);
 #endif
 
     void * volatile addr;
-    int index;
+    unsigned int index;
 
     addr = alloca(size);
 
@@ -54,43 +57,12 @@ void *_alloca_probe_c(uint32_t size)
 }
 
 
-int32_t printf2_c(const char *format, va_list ap)
+int64_t CCALL _ftol_c(double *num)
 {
-    int res;
-
-#ifdef DEBUG_CLIB
-    eprintf("printf: 0x%" PRIxPTR " (%s) - ", (uintptr_t) format, format);
-#endif
-
-    res = vprintf(format, ap);
-
-#ifdef DEBUG_CLIB
-    eprintf("%i\n", res);
-#endif
-
-    return res;
-}
-
-int32_t sprintf2_c(char *str, const char *format, va_list ap)
-{
-    int res;
-
-#ifdef DEBUG_CLIB
-    eprintf("sprintf: 0x%" PRIxPTR ", 0x%" PRIxPTR " (%s) - ", (uintptr_t) str, (uintptr_t) format, format);
-#endif
-
-    res = vsprintf(str, format, ap);
-
-#ifdef DEBUG_CLIB
-    eprintf("%i (%s)\n", res, str);
-#endif
-
-    return res;
-}
-
-
-int64_t _ftol_c(double *num)
-{
+#if defined(_MSC_VER) && _MSC_VER < 1800
+    return (int64_t) *num;
+#else
     return (int64_t) trunc(*num);
+#endif
 }
 

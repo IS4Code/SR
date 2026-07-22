@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,6 +22,10 @@
  *
  */
 
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 #include "../Game_defs.h"
 #include "../Game_vars.h"
 
@@ -37,9 +41,6 @@ static uint32_t Game_SelectGroupOnMove;
 static int Game_SelectGroupX, Game_SelectGroupY, Game_SelectGroupTreshold;
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
 static int keypad_xor_value_known = 0;
 static int keypad_xor_value = 0;
 #endif
@@ -48,10 +49,8 @@ static int Input_GameController;
 static int Controller_Deadzone;
 
 static SDL_Joystick *joystick = NULL;
-#if SDL_VERSION_ATLEAST(2,0,0)
 static SDL_GameController *controller = NULL;
 static int controller_base_axis;
-#endif
 static unsigned int joystick_hat_position = 0;
 static int controller_axis_x = 0;
 static int controller_axis_y = 0;
@@ -67,13 +66,8 @@ void EmulateKey(int type, int key)
 
     pump_event.type = type;
     pump_event.key.state = (type == SDL_KEYUP)?SDL_RELEASED:SDL_PRESSED;
-#if SDL_VERSION_ATLEAST(2,0,0)
     pump_event.key.repeat = 0;
     pump_event.key.keysym.sym = (SDL_Keycode) key;
-#else
-    pump_event.key.keysym.sym = (SDLKey) key;
-    pump_event.key.keysym.unicode = 0;
-#endif
     pump_event.key.keysym.mod = KMOD_NONE;
 
     SDL_PushEvent(&pump_event);
@@ -169,7 +163,6 @@ static void open_controller_or_joystick(int device_index)
 
     num_joysticks = SDL_NumJoysticks();
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     // prefer game controllers over joysticks
     for (index = 0; index < num_joysticks; index++)
     {
@@ -211,7 +204,6 @@ static void open_controller_or_joystick(int device_index)
     }
 
     if (controller == NULL)
-#endif
     for (index = 0; index < num_joysticks; index++)
     {
         if ((device_index >= 0) && (index != device_index))
@@ -229,13 +221,7 @@ static void open_controller_or_joystick(int device_index)
                 continue;
             }
 
-            fprintf(stderr, "Using joystick: %s\n",
-#if SDL_VERSION_ATLEAST(2,0,0)
-                SDL_JoystickName(joystick)
-#else
-                SDL_JoystickName(index)
-#endif
-            );
+            fprintf(stderr, "Using joystick: %s\n", SDL_JoystickName(joystick));
             break;
         }
     }
@@ -259,11 +245,7 @@ void Init_Input2(void)
 {
     if (Input_GameController)
     {
-        SDL_InitSubSystem(SDL_INIT_JOYSTICK
-#if SDL_VERSION_ATLEAST(2,0,0)
-            | SDL_INIT_GAMECONTROLLER
-#endif
-        );
+        SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 
 #if SDL_VERSION_ATLEAST(2,0,2)
         if (Game_SDLVersionNum >= SDL_VERSIONNUM(2,0,2))
@@ -273,13 +255,6 @@ void Init_Input2(void)
 #endif
 
         open_controller_or_joystick(-1);
-
-#if !SDL_VERSION_ATLEAST(2,0,0)
-        if (joystick == NULL)
-        {
-            SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
-        }
-#endif
     }
 }
 
@@ -386,8 +361,8 @@ int Handle_Input_Event(SDL_Event *_event)
 
                         SDL_GetMouseState(&mousex, &mousey);
 
-                        _event->type = (intptr_t) _event->user.data2;
-                        _event->button.button = (intptr_t) _event->user.data1;
+                        _event->type = (Uint32)(uintptr_t) _event->user.data2;
+                        _event->button.button = (Uint8)(uintptr_t) _event->user.data1;
                         _event->button.state = (_event->type == SDL_MOUSEBUTTONUP)?SDL_RELEASED:SDL_PRESSED;
                         _event->button.x = mousex;
                         _event->button.y = mousey;
@@ -601,7 +576,6 @@ int Handle_Input_Event2(SDL_Event *_event)
             }
             break;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
         case SDL_CONTROLLERAXISMOTION:
             if (controller != NULL)
             {
@@ -744,7 +718,7 @@ int Handle_Input_Event2(SDL_Event *_event)
                 }
             }
             break;
-#endif
+
         default:
             return 0;
     }
@@ -819,12 +793,12 @@ void Handle_Timer_Input_Event(void)
             controller_mouse_last_time = tick;
 
             tx = (((int64_t)cx) * diff) * Game_VideoAspectXR + controller_frac_x;
-            deltax = tx >> 29;
-            controller_frac_x = tx - (((int64_t)deltax) << 29);
+            deltax = (int)(tx >> 29);
+            controller_frac_x = (int)(tx - (((int64_t)deltax) << 29));
 
             ty = (((int64_t)cy) * diff) * Game_VideoAspectYR + controller_frac_y;
-            deltay = ty >> 29;
-            controller_frac_y = ty - (((int64_t)deltay) << 29);
+            deltay = (int)(ty >> 29);
+            controller_frac_y = (int)(ty - (((int64_t)deltay) << 29));
 
             event.type = SDL_USEREVENT;
             event.user.code = EC_MOUSE_MOVE;

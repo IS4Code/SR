@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,13 +24,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Xcom-int2.h"
 #include "Game_thread.h"
 #include "Game-int2.h"
 
-uint32_t Game_int386x(
+uint32_t CCALL Game_int386x(
     const uint32_t IntNum,
     const Game_REGS *in_regs,
     Game_REGS *out_regs,
@@ -66,11 +65,7 @@ uint32_t Game_int386x(
 #endif
 
 #if (EXE_BUILD != EXE_COMBINED)
-                #if SDL_VERSION_ATLEAST(2,0,0)
                     if (Game_Window != NULL)
-                #else
-                    if (Game_Screen != NULL)
-                #endif
                     {
                         event.type = SDL_USEREVENT;
                         event.user.code = EC_DISPLAY_DESTROY;
@@ -92,11 +87,7 @@ uint32_t Game_int386x(
 
                     SDL_SemWait(Game_DisplaySem);
 
-                #if SDL_VERSION_ATLEAST(2,0,0)
                     if (Game_Window == NULL)
-                #else
-                    if (Game_Screen == NULL)
-                #endif
                     {
 #if defined(__DEBUG__)
                         fprintf (stderr, "Error: Couldn't set video mode\n");
@@ -113,7 +104,7 @@ uint32_t Game_int386x(
             // case 0x10:
         default:
             Game_StopMain();
-    } // switch (inter_no)
+    } // switch (IntNum)
 
     *out_regs = tmp_regs;
 

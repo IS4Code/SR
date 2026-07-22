@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2018-2024 Roman Pauer
+ *  Copyright (C) 2018-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,19 +24,23 @@
 
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+#include <errno.h>
+#include <fcntl.h>
 #include "Albion-BBDOS.h"
 #include "Albion-BBERROR.h"
 #include "Albion-BBBASMEM.h"
-#include "Game_defs.h"
 // todo: remove
 #include "Game_vars.h"
 #include "virtualfs.h"
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <errno.h>
-#include <fcntl.h>
 
 #if !defined(O_RDONLY)
     #define O_RDONLY _O_RDONLY
@@ -94,7 +98,7 @@ static char DOS_filenames_history[HISTORY_SIZE][128];
 static void DOS_LocalPrintError(char *buffer, const uint8_t *data);
 
 
-int32_t DOS_Init(void)
+int32_t CCALL DOS_Init(void)
 {
     int file_handle;
 
@@ -127,7 +131,7 @@ int32_t DOS_Init(void)
     return 1;
 }
 
-void DOS_Exit(void)
+void CCALL DOS_Exit(void)
 {
     if (DOS_initialized)
     {
@@ -145,7 +149,7 @@ void DOS_Exit(void)
     }
 }
 
-int32_t DOS_Open(const char *path, uint32_t mode)
+int32_t CCALL DOS_Open(const char *path, uint32_t mode)
 {
     int file_handle, open_flags;
     char temp_str[MAX_PATH];
@@ -258,7 +262,7 @@ int32_t DOS_Open(const char *path, uint32_t mode)
     return (int16_t) file_handle;
 }
 
-int32_t DOS_Close(int32_t file_handle)
+int32_t CCALL DOS_Close(int32_t file_handle)
 {
     file_handle = (int16_t) file_handle;
 
@@ -281,7 +285,7 @@ int32_t DOS_Close(int32_t file_handle)
     return 1;
 }
 
-int32_t DOS_Read(int32_t file_handle, void *buffer, uint32_t length)
+int32_t CCALL DOS_Read(int32_t file_handle, void *buffer, uint32_t length)
 {
     int retval;
 
@@ -325,7 +329,7 @@ int32_t DOS_Read(int32_t file_handle, void *buffer, uint32_t length)
     return retval;
 }
 
-int32_t DOS_Write(int32_t file_handle, const void *buffer, uint32_t length)
+int32_t CCALL DOS_Write(int32_t file_handle, const void *buffer, uint32_t length)
 {
     int retval;
 
@@ -350,13 +354,12 @@ int32_t DOS_Write(int32_t file_handle, const void *buffer, uint32_t length)
     if (retval == -1)
     {
         int err;
+        DOS_ErrorStruct data;
 
         err = errno;
 
         // todo: remove
         errno_val = ((err >= 0) && (err < 256))?(errno_rtable[err]):(err);
-
-        DOS_ErrorStruct data;
 
         data.text = "DOS_Write: write() oserror";
 
@@ -376,7 +379,7 @@ int32_t DOS_Write(int32_t file_handle, const void *buffer, uint32_t length)
     return retval;
 }
 
-int32_t DOS_Seek(int32_t file_handle, int32_t origin, int32_t offset)
+int32_t CCALL DOS_Seek(int32_t file_handle, int32_t origin, int32_t offset)
 {
     off_t curpos;
 
@@ -568,7 +571,7 @@ static int DOS_WriteFile(const char *path, const void *buffer, unsigned int leng
 }
 #endif
 
-int32_t DOS_GetFileLength(const char *path)
+int32_t CCALL DOS_GetFileLength(const char *path)
 {
     int file_handle;
     off_t origpos, endpos;
@@ -620,7 +623,7 @@ int32_t DOS_GetFileLength(const char *path)
     return (endpos < 0 || endpos > 2147483647) ? -1 : endpos;
 }
 
-int32_t DOS_exists(const char *path)
+int32_t CCALL DOS_exists(const char *path)
 {
     char temp_str[MAX_PATH];
     int fd;
@@ -723,7 +726,7 @@ static const char *DOS_getcurrentdir(void)
 }
 #endif
 
-int32_t DOS_setcurrentdir(const char *path)
+int32_t CCALL DOS_setcurrentdir(const char *path)
 {
     file_entry *new_dir;
 
@@ -805,7 +808,7 @@ static int DOS_eof(int file_handle)
 }
 #endif
 
-int32_t DOS_GetSeekPosition(int32_t file_handle)
+int32_t CCALL DOS_GetSeekPosition(int32_t file_handle)
 {
     off_t curpos;
 

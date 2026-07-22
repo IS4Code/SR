@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -27,35 +27,39 @@
 
 #include <errno.h>
 #include <stdio.h>
-#ifdef USE_SDL2
-    #include <SDL2/SDL.h>
-#else
-    #include <SDL/SDL.h>
-    #ifdef ALLOW_OPENGL
-        #include <SDL/SDL_opengl.h>
-    #endif
-#endif
 #include "Game_defs.h"
 
 #if defined(DEFINE_VARIABLES)
     #define EXTERNAL_VARIABLE
+    #ifdef __cplusplus
+        #define EXTERNAL_CVAR_BGN extern "C" {
+        #define EXTERNAL_CVAR_END }
+    #else
+        #define EXTERNAL_CVAR_BGN
+        #define EXTERNAL_CVAR_END
+    #endif
 #else
     #define EXTERNAL_VARIABLE extern
+    #ifdef __cplusplus
+        #define EXTERNAL_CVAR_BGN extern "C"
+    #else
+        #define EXTERNAL_CVAR_BGN extern
+    #endif
+    #define EXTERNAL_CVAR_END
 #endif
 
-EXTERNAL_VARIABLE uint32_t X86_InterruptFlag;		/* interrupt flag indicator */
+EXTERNAL_CVAR_BGN uint32_t X86_InterruptFlag;		/* interrupt flag indicator */ EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE int Game_SDLVersionNum;			/* linked SDL version */
 
 EXTERNAL_VARIABLE uint8_t *Game_FrameBuffer;		/* video memory (all) */
-EXTERNAL_VARIABLE PTR32(uint8_t) Game_ScreenWindow;	/* video bank (64KiB) */
+EXTERNAL_CVAR_BGN PTR32(uint8_t) Game_ScreenWindow;	/* video bank (64KiB) */ EXTERNAL_CVAR_END
 EXTERNAL_VARIABLE uint32_t Game_InterruptTable[256];	/* interrupt table */
-EXTERNAL_VARIABLE void *Game_MouseTable[8];			/* mouse functions table */
+EXTERNAL_VARIABLE uint32_t Game_MouseTable[8];		/* mouse functions table */
 EXTERNAL_VARIABLE void *Game_AllocatedMemory[256];	/* dos allocated memory table */
 EXTERNAL_VARIABLE pixel_format_orig Game_Palette_Or[256];	/* original palette (rgba) */
 EXTERNAL_VARIABLE uint32_t Game_ScreenWindowNum;	/* screen number in video bank */
 EXTERNAL_VARIABLE volatile uint32_t Game_DisplayStart;		/* offset in video memory where display starts */
-EXTERNAL_VARIABLE uint32_t Game_ESP_Original_Value;	/* original value of ESP */
 EXTERNAL_VARIABLE uint32_t Game_NextMemory;			/* next memory place to allocate in memory table */
 EXTERNAL_VARIABLE SDL_Cursor *Game_OldCursor;		/* original cursor */
 EXTERNAL_VARIABLE SDL_Cursor *Game_NoCursor;		/* invisible cursor */
@@ -83,7 +87,6 @@ EXTERNAL_VARIABLE uint32_t Display_Bitsperpixel;	/* display bits per pixel */
 EXTERNAL_VARIABLE uint32_t Display_Fullscreen;		/* display - fulscreen ? */
 EXTERNAL_VARIABLE uint32_t Display_FSType;			/* fulscreen type */
 EXTERNAL_VARIABLE uint32_t Display_MouseLocked;		/* is mouse locked in the window ? */
-EXTERNAL_VARIABLE volatile int32_t Display_ChangeMode;		/* flag to change display mode: 1 = forward, -1 = backward */
 EXTERNAL_VARIABLE uint32_t Render_Width;			/* render width */
 EXTERNAL_VARIABLE uint32_t Render_Height;			/* render height */
 EXTERNAL_VARIABLE uint32_t Picture_Width;			/* picture width */
@@ -101,23 +104,11 @@ EXTERNAL_VARIABLE int Game_ScaleFactor;				/* factor for advanced scaler: 0 = ma
 EXTERNAL_VARIABLE int Game_ExtraScalerThreads;		/* number of extra threads for advanced scaler: -1 = auto */
 EXTERNAL_VARIABLE Game_Advanced_Flip_Procedure Display_Advanced_Flip_Procedure;	/* advanced flip procedure */
 
-#if SDL_VERSION_ATLEAST(2,0,0)
 EXTERNAL_VARIABLE SDL_Window *Game_Window;
 EXTERNAL_VARIABLE SDL_Renderer *Game_Renderer;
 EXTERNAL_VARIABLE SDL_Texture *Game_Texture[3];
 EXTERNAL_VARIABLE SDL_Texture *Game_Texture2[3];
 EXTERNAL_VARIABLE SDL_Texture *Game_ScaledTexture[3];
-#else
-EXTERNAL_VARIABLE SDL_Surface *Game_Screen;
-#ifdef ALLOW_OPENGL
-EXTERNAL_VARIABLE uint32_t Game_UseOpenGL;			/* use OpenGL for drawing ? */
-EXTERNAL_VARIABLE GLuint Game_GLTexture[3];
-EXTERNAL_VARIABLE GLuint Game_GLTexture2[3];
-EXTERNAL_VARIABLE GLuint Game_GLFramebuffer[3];
-EXTERNAL_VARIABLE GLuint Game_GLScaledTexture[3];
-#endif
-#endif
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
 EXTERNAL_VARIABLE void *Game_TextureData;
 EXTERNAL_VARIABLE void *Game_TextureData2;
 EXTERNAL_VARIABLE void *Game_ScaledTextureData;
@@ -126,11 +117,10 @@ EXTERNAL_VARIABLE int Game_UseTextureData2;
 EXTERNAL_VARIABLE int Scaler_ScaleFactor;
 EXTERNAL_VARIABLE int Scaler_ScaleTextureData;
 EXTERNAL_VARIABLE int Scaler_ScaleTexture;
-#endif
 
 // global audio variables
-EXTERNAL_VARIABLE uint32_t Game_Sound;				/* is sound enabled ? */
-EXTERNAL_VARIABLE uint32_t Game_Music;				/* is music enabled ? */
+EXTERNAL_CVAR_BGN uint32_t Game_Sound;				/* is sound enabled ? */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN uint32_t Game_Music;				/* is music enabled ? */ EXTERNAL_CVAR_END
 EXTERNAL_VARIABLE uint32_t Game_SoundMasterVolume;	/* sound master volume */
 EXTERNAL_VARIABLE uint32_t Game_MusicMasterVolume;	/* Music master volume */
 EXTERNAL_VARIABLE int Game_MixerChannels;			/* number of used mixer channels */
@@ -142,35 +132,26 @@ EXTERNAL_VARIABLE int Game_ResamplingQuality;		/* audio resampling quality
                                                        0: normal quality
                                                        1: higher quality */
 EXTERNAL_VARIABLE int Game_SwapSoundChannels;		/* swap left and right sound channel ? */
-EXTERNAL_VARIABLE int Game_VolumeDelta;             /*  0: Volume is stationary
-                                                        1: Volume is increasing
-                                                       -1: Volume is decreasing	*/
 EXTERNAL_VARIABLE int Game_MidiSubsystem;			/* MIDI subsystem
                                                        0: SDL_mixer
                                                        1: WildMidi
                                                        2: BASSMIDI
                                                        3: ADLMIDI
                                                        11: native Windows
-                                                       12: ALSA */
+                                                       12: ALSA
+                                                       13: CoreMIDI
+                                                       21: MT32 - native Windows
+                                                       22: MT32 - ALSA
+                                                       23: MT32 - CoreMIDI */
 EXTERNAL_VARIABLE char *Game_SoundFontPath;			/* Path to SoundFont file */
 EXTERNAL_VARIABLE char *Game_MidiDevice;			/* MIDI device name */
 EXTERNAL_VARIABLE int Game_OPL3Emulator;			/* OPL3 emulator
                                                        0: fast - DOSBox
                                                        1: precise - Nuked OPL3 */
-
-// global input variables
-//senquack - now we keep track of what mouse buttons are currently pressed so
-//				we can support two ways of using the touchscreen.  The first way
-//				lets users touch/tap the screen and that is LMB, and if they
-//				hold the buttom assigned to RMB while touch/tapping the screen,
-//				that is RMB.  The second way lets users only move the cursor
-//				when touching the touchscreen, and only then the buttons for
-//				LMB/RMB are pressed are mouse clicks registered.
-EXTERNAL_VARIABLE uint32_t Game_RMBActive;	/* 1 if button for RMB is held  */
-EXTERNAL_VARIABLE uint32_t Game_TouchscreenButtonEvents;	/* New option, see comments above */
+EXTERNAL_VARIABLE int Game_MT32DelaySysex;			/* Add delays when sending sysex messages on MT-32 ? (to prevent buffer overflow with Rev.0 MT-32) */
 
 // 3d engine variables
-EXTERNAL_VARIABLE volatile uint32_t Game_UseEnhanced3DEngine;
+EXTERNAL_CVAR_BGN volatile uint32_t Game_UseEnhanced3DEngine; EXTERNAL_CVAR_END
 EXTERNAL_VARIABLE volatile uint32_t Game_UseEnhanced3DEngineNewValue;
 EXTERNAL_VARIABLE uint8_t *Game_ScreenViewpartOverlay[2];
 EXTERNAL_VARIABLE uint8_t *Game_ScreenViewpartOriginal[2];
@@ -185,24 +166,24 @@ EXTERNAL_VARIABLE int Game_ScreenshotFormat;    /* screenshot format
                                                     4: BMP
                                                     5: PNG */
 EXTERNAL_VARIABLE int Game_ScreenshotEnhancedResolution;
-EXTERNAL_VARIABLE uint32_t Game_ScreenshotEnabled;
-EXTERNAL_VARIABLE uint32_t Game_ScreenshotAutomaticFilename;
+EXTERNAL_CVAR_BGN uint32_t Game_ScreenshotEnabled; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN uint32_t Game_ScreenshotAutomaticFilename; EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE Game_sample *Game_SampleCache[GAME_SAMPLE_CACHE_SIZE];
 
 
-EXTERNAL_VARIABLE PTR32(FILE) Game_stdin;					/* stdin */
-EXTERNAL_VARIABLE PTR32(FILE) Game_stdout;				/* stdout */
-EXTERNAL_VARIABLE PTR32(FILE) Game_stderr;				/* stderr */
+EXTERNAL_CVAR_BGN PTR32(void) Game_stdin;				/* stdin */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN PTR32(void) Game_stdout;				/* stdout */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN PTR32(void) Game_stderr;				/* stderr */ EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE char Albion_CDPath[256];			/* path to albion cd */
 EXTERNAL_VARIABLE Albion_Lang Albion_Font_Lang;		/* albion font language */
 
 
 EXTERNAL_VARIABLE volatile uint32_t Game_TimerRunning;	/* is timer interrupt running ? */
-EXTERNAL_VARIABLE volatile uint32_t Game_TimerTick;	/* Timer tick counter */
-EXTERNAL_VARIABLE volatile uint32_t Game_TimerRun;	/* Timer number of runs counter */
-EXTERNAL_VARIABLE volatile uint32_t Game_VSyncTick;	/* VSync tick counter */
+EXTERNAL_CVAR_BGN volatile uint32_t Game_TimerTick;	/* Timer tick counter */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_TimerRun;	/* Timer number of runs counter */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_VSyncTick;	/* VSync tick counter */ EXTERNAL_CVAR_END
 EXTERNAL_VARIABLE volatile uint32_t Thread_Exited;	/* did main thread exit ? */
 EXTERNAL_VARIABLE volatile uint32_t Thread_Exit;	/* should thread exit ? */
 EXTERNAL_VARIABLE volatile uint32_t SMK_Playing;	/* is smk video playing? */
@@ -229,11 +210,13 @@ EXTERNAL_VARIABLE char Game_ConfigFilename[80];			/* Config file being used */
 
 EXTERNAL_VARIABLE char Game_Directory[80];			/* Directory where the game is installed */
 
-EXTERNAL_VARIABLE uint32_t self_mod_width;			/* variable to store self modyfing screen width */
+EXTERNAL_CVAR_BGN uint32_t self_mod_width;			/* variable to store self modyfing screen width */ EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE uint32_t errno_rtable[256];		/* reverse errno table */
 
 #undef EXTERNAL_VARIABLE
+#undef EXTERNAL_CVAR_BGN
+#undef EXTERNAL_CVAR_END
 
 #define ERRNO_NUM 41
 
@@ -264,22 +247,21 @@ extern const uint32_t errno_table[ERRNO_NUM];
 
 
 
-extern uint32_t mouse_pos[2];
-extern uint32_t screen_window_ptr[4];
-extern uint8_t keyboard_keys[0x80];
+extern int CCALL Game_Main_Asm(int argc, char *argv[]);
+extern NORETURN void CCALL Game_StopMain_Asm(void);
 
 
-extern int Game_Main_Asm(int argc, PTR32(char) argv[]);
-extern void Game_StopMain_Asm(void) __attribute__ ((__noreturn__));
-
-
-extern uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y);
-extern uint32_t Game_MouseButton(uint32_t state, uint32_t action);
-extern void Game_RunTimer_Asm(void);
+extern uint32_t CCALL Game_MouseMove(uint32_t state, uint32_t x, uint32_t y);
+extern uint32_t CCALL Game_MouseButton(uint32_t state, uint32_t action);
+extern void CCALL Game_RunTimer_Asm(void);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern uint32_t mouse_pos[2];
+extern PTR32(uint8_t) screen_window_ptr[]; // if this is defined as screen_window_ptr[4], then clang thinks it's aligned to 16 bytes (it's not) and generates movdqa instruction which crashes
+extern uint8_t keyboard_keys[0x80];
 
 extern int32_t errno_val;
 

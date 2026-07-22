@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2020-2021 Roman Pauer
+ *  Copyright (C) 2020-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -26,6 +26,7 @@
 #define _BBOPM_H_INCLUDED_
 
 #include <stdint.h>
+#include "platform.h"
 
 #define BBOPM_OWNED_BUFFER 1
 #define BBOPM_MODIFIED 2
@@ -36,7 +37,7 @@
 
 #pragma pack(1)
 
-typedef struct __attribute__ ((__packed__)) _OPM_struct {
+typedef struct PACKED _OPM_struct {
     uint32_t flags;
     int16_t width;
     int16_t height;
@@ -60,7 +61,7 @@ typedef struct __attribute__ ((__packed__)) _OPM_struct {
     uint32_t access_offset;
 } OPM_struct;
 
-typedef struct __attribute__ ((__packed__)) _GFX_struct {
+typedef struct PACKED _GFX_struct {
     uint32_t unknown_00;
     uint32_t unknown_04;
     uint32_t unknown_08;
@@ -81,19 +82,19 @@ typedef struct __attribute__ ((__packed__)) _GFX_struct {
 extern "C" {
 #endif
 
-int OPM_Init_c(void);
-void OPM_Exit_c(void);
-int OPM_New_c(unsigned int width, unsigned int height, unsigned int bytes_per_pixel, OPM_struct *pixel_map, uint8_t *buffer);
-void OPM_Del_c(OPM_struct *pixel_map);
-void OPM_CreateVirtualOPM_c(OPM_struct *base_pixel_map, OPM_struct *virtual_pixel_map, int virtual_x, int virtual_y, int virtual_width, int virtual_height);
-int OPM_CreateSecondaryOPM_c(int width, int height, int bytes_per_pixel, OPM_struct *pixel_map, uint8_t *buffer);
-void OPM_SetPixel_c(OPM_struct *pixel_map, int x, int y, uint8_t color);
-void OPM_HorLine_c(OPM_struct *pixel_map, int x, int y, unsigned int length, uint8_t color);
-void OPM_VerLine_c(OPM_struct *pixel_map, int x, int y, unsigned int length, uint8_t color);
-void OPM_FillBox_c(OPM_struct *pixel_map, int x, int y, unsigned int width, unsigned int height, uint8_t color);
-void OPM_CopyGFXOPM_c(OPM_struct *pixel_map, GFX_struct *gfx, int pos_x, int pos_y, uint8_t value_add);
-void OPM_CopyOPMOPM_c(OPM_struct *src_pixel_map, OPM_struct *dst_pixel_map, int src_x, int src_y, int copy_width, int copy_height, int dst_x, int dst_y);
-void OPM_AccessBitmap_c(OPM_struct *pixel_map);
+int CCALL OPM_Init_c(void);
+void CCALL OPM_Exit_c(void);
+int CCALL OPM_New_c(unsigned int width, unsigned int height, unsigned int bytes_per_pixel, OPM_struct *pixel_map, uint8_t *buffer);
+void CCALL OPM_Del_c(OPM_struct *pixel_map);
+void CCALL OPM_CreateVirtualOPM_c(OPM_struct *base_pixel_map, OPM_struct *virtual_pixel_map, int virtual_x, int virtual_y, int virtual_width, int virtual_height);
+int CCALL OPM_CreateSecondaryOPM_c(int width, int height, int bytes_per_pixel, OPM_struct *pixel_map, uint8_t *buffer);
+void CCALL OPM_SetPixel_c(OPM_struct *pixel_map, int x, int y, uint8_t color);
+void CCALL OPM_HorLine_c(OPM_struct *pixel_map, int x, int y, unsigned int length, uint8_t color);
+void CCALL OPM_VerLine_c(OPM_struct *pixel_map, int x, int y, unsigned int length, uint8_t color);
+void CCALL OPM_FillBox_c(OPM_struct *pixel_map, int x, int y, unsigned int width, unsigned int height, uint8_t color);
+void CCALL OPM_CopyGFXOPM_c(OPM_struct *pixel_map, GFX_struct *gfx, int pos_x, int pos_y, uint8_t value_add);
+void CCALL OPM_CopyOPMOPM_c(OPM_struct *src_pixel_map, OPM_struct *dst_pixel_map, int src_x, int src_y, int copy_width, int copy_height, int dst_x, int dst_y);
+void CCALL OPM_AccessBitmap_c(OPM_struct *pixel_map);
 
 #ifdef __cplusplus
 }

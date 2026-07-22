@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,13 +22,18 @@
  *
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 #include "smack.h"
 
-#ifdef __BYTE_ORDER__
+#if defined(_MSC_VER)
+
+#undef BIG_ENDIAN_BYTE_ORDER
+
+#elif defined(__BYTE_ORDER__)
 
 #if (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #define BIG_ENDIAN_BYTE_ORDER
@@ -96,7 +101,7 @@ typedef struct _Tree16_ {
 	uint32_t LastDecoded;
 	uint32_t LastDecoded2;
 	uint32_t LastDecoded3;
-	uint32_t Nodes[];
+	uint32_t Nodes[1];
 /*	Nodes:	Bit 31: 0 - Leaf
 					1 - Node
 */
@@ -127,10 +132,7 @@ static void BitStreamInitialize(BitStream *bitstream, FILE *File,
 	bitstream->Empty = !BitStreamSize;
 }
 
-#if !(defined(GP2X) && defined(__GNUC__))
-static
-#endif
-void BitStreamFillBuffer(BitStream *bitstream)
+static void BitStreamFillBuffer(BitStream *bitstream)
 {
 	uint32_t count;
 
@@ -142,7 +144,7 @@ void BitStreamFillBuffer(BitStream *bitstream)
 	count = bitstream->BytesLeft;
 	if (count > bitstream->BufferSize) count = bitstream->BufferSize;
 
-	bitstream->BytesRead = fread(bitstream->Buffer, 1, count, bitstream->File);
+	bitstream->BytesRead = (uint32_t)fread(bitstream->Buffer, 1, count, bitstream->File);
 
 	if (bitstream->BytesRead != 0)
 	{
@@ -179,83 +181,6 @@ void BitStreamFillBuffer(BitStream *bitstream)
 		} \
 	} \
 }
-
-#if defined(GP2X) && defined(__GNUC__)
-
-static uint32_t __attribute__ ((noinline, naked)) BitStreamReadBitAsm(BitStream *bitstream)
-{
-	asm(
-		// BitStream offsets
-		".equ BS_File, 0" "\n"
-		".equ BS_Buffer, 4" "\n"
-		".equ BS_BufferSize, 8" "\n"
-		".equ BS_BytesRead, 12" "\n"
-		".equ BS_BufferPos, 16" "\n"
-		".equ BS_BitsLeft, 20" "\n"
-		".equ BS_BytesLeft, 24" "\n"
-		".equ BS_Empty, 28" "\n"
-
-		"ldr r1, [r0, #BS_Empty]" "\n"
-		"cmp r1, #0" "\n"
-		"movne r0, #0" "\n"
-		// exit
-		"movne pc, lr" "\n"
-
-		"mov r3, r0" "\n"
-
-		"ldr r12, [r3, #BS_BytesRead]" "\n"
-		"ldr r2, [r3, #BS_BufferPos]" "\n"
-		"ldr r1, [r3, #BS_BitsLeft]" "\n"
-
-		"cmp r1, #0" "\n"
-		"bne 2f" "\n"
-		"add r0, r2, #1" "\n"
-		"cmp r0, r12" "\n"
-		"bhs 3f" "\n"
-
-		"1:" "\n"
-		"mov r1, #8" "\n"
-		"add r2, r2, #1" "\n"
-		"str r2, [r3, #BS_BufferPos]" "\n"
-
-		"2:" "\n"
-		"ldr r0, [r3, #BS_Buffer]" "\n"
-		"ldrb r0, [r0, r2]" "\n"
-		"mov r0, r0, lsl r1" "\n"
-		"mov r0, r0, lsr #8" "\n"
-		"and r0, r0, #1" "\n"
-		"subS r1, r1, #1" "\n"
-		"str r1, [r3, #BS_BitsLeft]" "\n"
-		// exit
-		"movne pc, lr" "\n"
-		"add r2, r2, #1" "\n"
-		"cmp r2, r12" "\n"
-		// exit
-		"movlo pc, lr" "\n"
-		"ldr r1, [r3, #BS_BytesLeft]" "\n"
-		"cmp r1, #0" "\n"
-		"moveq r1, #1" "\n"
-		"streq r1, [r3, #BS_Empty]" "\n"
-		// exit
-		"bx lr" "\n"
-
-		"3:" "\n"
-		"stmfd sp!, {r3, lr}" "\n"
-		"mov r0, r3" "\n"
-		"bl BitStreamFillBuffer" "\n"
-		"ldmfd sp!, {r3, lr}" "\n"
-		"ldr r12, [r3, #BS_BytesRead]" "\n"
-		"ldr r2, [r3, #BS_BufferPos]" "\n"
-		"ldr r1, [r3, #BS_BitsLeft]" "\n"
-		"cmp r1, #0" "\n"
-		"bne 2b" "\n"
-		"b 1b" "\n"
-	);
-}
-
-#define BitStreamReadBit(x) BitStreamReadBitAsm(x)
-
-#else
 
 static uint32_t BitStreamReadBit(BitStream *bitstream)
 {
@@ -294,7 +219,6 @@ static uint32_t BitStreamReadBit(BitStream *bitstream)
 
 	return ret;
 }
-#endif
 
 static uint32_t BitStreamReadBits8(BitStream *bitstream)
 {
@@ -870,7 +794,7 @@ SmackStruct *SmackOpen(FILE *SmackFile)
 /* create huffman trees */
 	BitStreamInitialize(&bitstream, SmackFile, buf, 1024, Header.TreesSize);
 
-	Smack->MMap_Tree = (uint8_t *) malloc(Header.MMap_Size + sizeof(Tree16) - 12);
+	Smack->MMap_Tree = (uint8_t *) malloc(Header.MMap_Size + offsetof(Tree16, Nodes) - 12);
 	if (Smack->MMap_Tree == NULL)
 	{
 		SmackClose(Smack);
@@ -880,7 +804,7 @@ SmackStruct *SmackOpen(FILE *SmackFile)
 	((Tree16 *) Smack->MMap_Tree)->NumNodes = (Header.MMap_Size - 12) >> 2;
 	CreateHuffmanTree16(&bitstream, (Tree16 *) Smack->MMap_Tree);
 
-	Smack->MClr_Tree = (uint8_t *) malloc(Header.MClr_Size + sizeof(Tree16) - 12);
+	Smack->MClr_Tree = (uint8_t *) malloc(Header.MClr_Size + offsetof(Tree16, Nodes) - 12);
 	if (Smack->MClr_Tree == NULL)
 	{
 		SmackClose(Smack);
@@ -890,7 +814,7 @@ SmackStruct *SmackOpen(FILE *SmackFile)
 	((Tree16 *) Smack->MClr_Tree)->NumNodes = (Header.MClr_Size - 12) >> 2;
 	CreateHuffmanTree16(&bitstream, (Tree16 *) Smack->MClr_Tree);
 
-	Smack->Full_Tree = (uint8_t *) malloc(Header.Full_Size + sizeof(Tree16) - 12);
+	Smack->Full_Tree = (uint8_t *) malloc(Header.Full_Size + offsetof(Tree16, Nodes) - 12);
 	if (Smack->Full_Tree == NULL)
 	{
 		SmackClose(Smack);
@@ -900,7 +824,7 @@ SmackStruct *SmackOpen(FILE *SmackFile)
 	((Tree16 *) Smack->Full_Tree)->NumNodes = (Header.Full_Size - 12) >> 2;
 	CreateHuffmanTree16(&bitstream, (Tree16 *) Smack->Full_Tree);
 
-	Smack->Type_Tree = (uint8_t *) malloc(Header.Type_Size + sizeof(Tree16) - 12);
+	Smack->Type_Tree = (uint8_t *) malloc(Header.Type_Size + offsetof(Tree16, Nodes) - 12);
 	if (Smack->Type_Tree == NULL)
 	{
 		SmackClose(Smack);

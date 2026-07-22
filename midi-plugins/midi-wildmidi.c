@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -37,6 +37,14 @@
 #include <speex/speex_resampler.h>
 #endif
 
+#ifdef _MSC_VER
+    #define EXPORT __declspec(dllexport)
+#elif defined __GNUC__
+    #define EXPORT __attribute__ ((visibility ("default")))
+#else
+    #define EXPORT
+#endif
+
 
 typedef struct {
     void *handle;
@@ -56,12 +64,14 @@ static unsigned int sampling_rate = 0;
 
 static char const *check_file(char const *filename)
 {
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    DWORD dwAttrib;
+#endif
+
     if (filename == NULL) return NULL;
     if (*filename == 0) return NULL;
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
-    DWORD dwAttrib;
-
     dwAttrib = GetFileAttributesA(filename);
     if ((dwAttrib == INVALID_FILE_ATTRIBUTES) || (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
 #else
@@ -79,14 +89,14 @@ static char const *check_file(char const *filename)
 
 
 
-static int set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
+static int MIDI_PLUGIN_API set_master_volume(unsigned char master_volume) // master_volume = 0 - 127
 {
     if (master_volume > 127) master_volume = 127;
 
     return WildMidi_MasterVolume(master_volume);
 }
 
-static void *open_file(char const *midifile)
+static void * MIDI_PLUGIN_API open_file(char const *midifile)
 {
     resampling_handle *handle;
 
@@ -130,7 +140,7 @@ static void *open_file(char const *midifile)
     }
 }
 
-static void *open_buffer(void const *midibuffer, long int size)
+static void * MIDI_PLUGIN_API open_buffer(void const *midibuffer, long int size)
 {
     resampling_handle *handle;
 
@@ -175,7 +185,7 @@ static void *open_buffer(void const *midibuffer, long int size)
     }
 }
 
-static long int get_data(void *handle, void *buffer, long int size)
+static long int MIDI_PLUGIN_API get_data(void *handle, void *buffer, long int size)
 {
     if (handle == NULL) return -2;
     if (buffer == NULL) return -3;
@@ -217,7 +227,7 @@ static long int get_data(void *handle, void *buffer, long int size)
                 buffer = (void *)((out_len << 2) + (uintptr_t)buffer);
                 num_to_write -= out_len;
 
-                for (index = 0; in_len + index < rhandle->num_samples; index++)
+                for (index = 0; in_len + index < (unsigned int)rhandle->num_samples; index++)
                 {
                     rhandle->samples[2 * index] = rhandle->samples[2 * (in_len + index)];
                     rhandle->samples[2 * index + 1] = rhandle->samples[2 * (in_len + index) + 1];
@@ -247,7 +257,7 @@ static long int get_data(void *handle, void *buffer, long int size)
 #define POS ((uint32_t)(rhandle->pos >> 32))
 #define FRAC ((int32_t)(((uint32_t)rhandle->pos) >> 16))
 
-                while ((num_to_write > 0) && (POS + 1 < rhandle->num_samples))
+                while ((num_to_write > 0) && (POS + 1 < (unsigned int)rhandle->num_samples))
                 {
                     ((int16_t *)buffer)[0] = (rhandle->samples[2 * POS] * (0x10000 - FRAC) + rhandle->samples[2 * (POS + 1)] * (FRAC)) >> 16;
                     ((int16_t *)buffer)[1] = (rhandle->samples[2 * POS + 1] * (0x10000 - FRAC) + rhandle->samples[2 * (POS + 1) + 1] * (FRAC)) >> 16;
@@ -257,7 +267,7 @@ static long int get_data(void *handle, void *buffer, long int size)
                     num_to_write--;
                 }
 
-                for (index = 0; POS + index < rhandle->num_samples; index++)
+                for (index = 0; POS + index < (unsigned int)rhandle->num_samples; index++)
                 {
                     rhandle->samples[2 * index] = rhandle->samples[2 * (POS + index)];
                     rhandle->samples[2 * index + 1] = rhandle->samples[2 * (POS + index) + 1];
@@ -279,7 +289,7 @@ static long int get_data(void *handle, void *buffer, long int size)
     }
 }
 
-static int rewind_midi(void *handle)
+static int MIDI_PLUGIN_API rewind_midi(void *handle)
 {
     unsigned long int sample_pos;
 
@@ -300,7 +310,7 @@ static int rewind_midi(void *handle)
     }
 }
 
-static int close_midi(void *handle)
+static int MIDI_PLUGIN_API close_midi(void *handle)
 {
     if (handle == NULL) return -2;
 
@@ -327,14 +337,14 @@ static int close_midi(void *handle)
     }
 }
 
-static void shutdown_plugin(void)
+static void MIDI_PLUGIN_API shutdown_plugin(void)
 {
     WildMidi_Shutdown();
 }
 
 
-__attribute__ ((visibility ("default")))
-int initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
+EXPORT
+int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions)
 {
     char const *timidity_cfg;
 

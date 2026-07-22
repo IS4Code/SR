@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -101,7 +101,7 @@ static SDL_Thread *MP_thread;
 static volatile int thread_finish;
 
 
-static inline void LockSem(SDL_sem *sem)
+static INLINE void LockSem(SDL_sem *sem)
 {
     while (SDL_SemWait(sem));
 }
@@ -373,7 +373,7 @@ static int MidiPlugin_ProcessData(void *data)
 
                             write_buffer = MP_sequence.write_buffer & 1;
 
-                            MP_sequence.bytes_left[write_buffer] = MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
+                            MP_sequence.bytes_left[write_buffer] = (Uint16)MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
                             if (MP_sequence.bytes_left[write_buffer] != BUFFER_SIZE)
                             {
                                 MP_functions.rewind_midi(MP_sequence.midi);
@@ -417,7 +417,7 @@ static int MidiPlugin_ProcessData(void *data)
 
                         write_buffer = MP_sequence.write_buffer & 1;
 
-                        MP_sequence.bytes_left[write_buffer] = MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
+                        MP_sequence.bytes_left[write_buffer] = (Uint16)MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
 
                         if (MP_sequence.read_buffer == MP_sequence.write_buffer)
                         {
@@ -456,6 +456,7 @@ int MidiPlugin_Startup(void)
     else if (Game_MidiSubsystem == 3) plugin_name = ".\\midi-adlmidi.dll";
     else if (Game_MidiSubsystem == 10) plugin_name = ".\\adlib-dosbox_opl.dll";
     else if (Game_MidiSubsystem == 11) plugin_name = ".\\mt32-munt.dll";
+    else if (Game_MidiSubsystem == 12) plugin_name = ".\\awe32-emu8k.dll";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "unknown plugin");
@@ -467,7 +468,7 @@ int MidiPlugin_Startup(void)
 
     if (MP_handle == NULL)
     {
-        fprintf(stderr, "%s: load error: 0x%x\n", "midi", GetLastError());
+        fprintf(stderr, "%s: load error: 0x%x\n", "midi", (unsigned int)GetLastError());
         return 2;
     }
 #else
@@ -479,6 +480,7 @@ int MidiPlugin_Startup(void)
     else if (Game_MidiSubsystem == 3) plugin_name = "./midi-adlmidi.so";
     else if (Game_MidiSubsystem == 10) plugin_name = "./adlib-dosbox_opl.so";
     else if (Game_MidiSubsystem == 11) plugin_name = "./mt32-munt.so";
+    else if (Game_MidiSubsystem == 12) plugin_name = "./awe32-emu8k.so";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "unknown plugin");
@@ -511,6 +513,7 @@ int MidiPlugin_Startup(void)
     MP_parameters.opl3_emulator = Game_OPL3Emulator;
     MP_parameters.resampling_quality = Game_ResamplingQuality;
     MP_parameters.sampling_rate = Game_AudioRate;
+    MP_parameters.awe32_rom_path = Game_AWE32RomPath;
 
     vfs_get_real_name("C:\\SOUND\\DRIVERS.CAT", (char *) &temp_str, NULL);
     MP_parameters.drivers_cat_path = (char *) &temp_str;
@@ -574,13 +577,7 @@ int MidiPlugin_Startup(void)
     // start thread
     thread_finish = 0;
 
-    MP_thread = SDL_CreateThread(
-        MidiPlugin_ProcessData,
-#if SDL_VERSION_ATLEAST(2,0,0)
-        "midi",
-#endif
-        NULL
-    );
+    MP_thread = SDL_CreateThread(MidiPlugin_ProcessData, "midi", NULL);
     if (MP_thread == NULL)
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "failed to create thread");
@@ -604,15 +601,6 @@ int MidiPlugin_Startup(void)
 
 #undef get_proc_address
 #undef free_library
-}
-
-void MidiPlugin_Restore(void)
-{
-    if (MP_thread != NULL)
-    {
-        // set mixer
-        Mix_HookMusic(&MidiPlugin_MusicPlayer, temp_buf);
-    }
 }
 
 void MidiPlugin_Shutdown(void)
@@ -657,7 +645,7 @@ void MidiPlugin_SetMusicVolume(void)
 
     if (Game_Music)
     {
-        new_volume = (Game_AudioMasterVolume * Game_MusicSequence.volume * Game_AudioMusicVolume * 127) >> 21;
+        new_volume = (Game_MusicSequence.volume * Game_AudioMusicVolume * 127) >> 14;
 
         LockSem(MP_sequence.sem);
 
@@ -693,7 +681,7 @@ void MidiPlugin_start_sequence(uint8_t *seq)
 
             MP_sequence.loop_count = 1;
 
-            MP_sequence.midi = MP_functions.open_buffer(seq, 20000);
+            MP_sequence.midi = MP_functions.open_buffer(seq, Game_SongLength ? Game_SongLength : 20000);
         }
         else if (strcmp((const char *)seq, "MIDI") == 0)
         {

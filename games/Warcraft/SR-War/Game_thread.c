@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -25,9 +25,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <malloc.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
+#include "Game_memory.h"
 #include "Game_scalerplugin.h"
 #include "Game_thread.h"
 #include "Game_virtualkeyboard.h"
@@ -40,12 +40,6 @@ int Game_Main(void)
 #define MLEN 9
 
     const static char main_filename[MLEN+1] = ".\\war.exe";
-    char main_filename_local[MLEN+1];
-    PTR32(char) main_filename_local_ptr[2];
-
-    memcpy(main_filename_local, main_filename, MLEN+1);
-    main_filename_local_ptr[0] = main_filename_local;
-    main_filename_local_ptr[1] = NULL;
 
     if (Thread_Exit)
     {
@@ -53,8 +47,26 @@ int Game_Main(void)
     }
     else
     {
-        argv_val = main_filename_local_ptr;
-        return Game_Main_Asm(1, main_filename_local_ptr);
+        uint8_t *argv_local;
+        int ret;
+
+        argv_local = (uint8_t *)x86_malloc(2 * sizeof(uint32_t) + MLEN+1);
+        if (argv_local == NULL)
+        {
+            fprintf(stderr, "Error: Not enough memory\n");
+            return 1;
+        }
+
+        ((PTR32(uint8_t) *)argv_local)[0] = argv_local + 2 * sizeof(uint32_t);
+        ((PTR32(uint8_t) *)argv_local)[1] = NULL;
+        memcpy(argv_local + 2 * sizeof(uint32_t), main_filename, MLEN+1);
+
+        argv_val = (char **)argv_local;
+        ret = Game_Main_Asm(1, (char **)argv_local);
+
+        x86_free(argv_local);
+
+        return ret;
     }
 
 #undef MLEN
@@ -78,56 +90,11 @@ void Game_StopMain(void)
     Game_StopMain_Asm();
 }
 
-void *Game_AllocateMemory(uint32_t size)
-{
-    void *mem;
-
-    mem = malloc(size);
-
-    if (mem != NULL)
-    {
-        if (Game_NextMemory != 256)
-        {
-            Game_AllocatedMemory[Game_NextMemory] = mem;
-            Game_NextMemory++;
-        }
-        else
-        {
-            int i;
-
-            for (i = 0; i < 256; i++)
-            {
-                if (Game_AllocatedMemory[i] == NULL)
-                {
-                    Game_AllocatedMemory[i] = mem;
-                    break;
-                }
-            }
-        }
-    }
-
-    return mem;
-}
-
-void Game_FreeMemory(void *mem)
-{
-    unsigned int i;
-
-    for (i = 0; i < 256; i++)
-    {
-        if (Game_AllocatedMemory[i] == mem)
-        {
-            Game_AllocatedMemory[i] = NULL;
-            if (i + 1 == Game_NextMemory) Game_NextMemory--;
-            break;
-        }
-    }
-
-    free(mem);
-}
-
 int Game_MainThread(void *data)
 {
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_InitThreadConcurency();
+#endif
 
     Game_CleanState(Thread_Exit);
 
@@ -156,15 +123,15 @@ int Game_MainThread(void *data)
         SDL_PushEvent(&event);
     }
 
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_CloseThreadConcurency();
+#endif
     return 0;
 }
 
 int Game_FlipThread(void *data)
 {
     SDL_Event event;
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    int clear_screen;
-#endif
 
 #undef FPS_WRITE
 
@@ -176,14 +143,10 @@ int Game_FlipThread(void *data)
     LastTimer = Game_VSyncTick;
 #endif
 
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    clear_screen = 0;
-#endif
-
-    while (1)
+    for (;;)
     {
         SDL_SemWait(Game_FlipSem);
-        if (Thread_Exit) return 0;
+        if (Thread_Exit) break;
 
 #ifdef FPS_WRITE
         CurrentTicks = SDL_GetTicks();
@@ -207,76 +170,12 @@ fprintf(stderr, "fps: %.3f    tps: %.3f\n", (float) NumDisplay * 1000 / (Current
 
         if (Game_DisplayActive)
         {
-        #if SDL_VERSION_ATLEAST(2,0,0)
             Display_Flip_Procedure(Game_FrameBuffer, Game_TextureData);
 
             if (Scaler_ScaleTextureData)
             {
                 ScalerPlugin_scale(Scaler_ScaleFactor, Game_TextureData, Game_ScaledTextureData, Render_Width, Render_Height, 1);
             }
-        #else
-        #ifdef ALLOW_OPENGL
-            if (Game_UseOpenGL)
-            {
-                Display_Flip_Procedure(Game_FrameBuffer, Game_TextureData);
-
-                if (Scaler_ScaleTextureData)
-                {
-                    ScalerPlugin_scale(Scaler_ScaleFactor, Game_TextureData, Game_ScaledTextureData, Render_Width, Render_Height, 1);
-                }
-            }
-            else
-        #endif
-            {
-                /* ??? */
-
-                SDL_LockSurface(Game_Screen);
-
-                if (Display_ChangeMode != 0)
-                {
-                    int mousex, mousey;
-
-                    Game_GetGameMouse(&mousex, &mousey);
-
-                    if (Change_Display_Mode(Display_ChangeMode))
-                    {
-                        clear_screen = 3;
-                    }
-
-                    Display_ChangeMode = 0;
-
-                    Game_VideoAspectX = ((320-1) << 16) / (Picture_Width-1);
-                    Game_VideoAspectY = ((200-1) << 16) / (Picture_Height-1);
-
-                    Game_VideoAspectXR = ((Picture_Width-1) << 16) / (320-1);
-                    Game_VideoAspectYR = ((Picture_Height-1) << 16) / (200-1);
-
-                    Game_RepositionMouse(mousex, mousey);
-                }
-
-                if (clear_screen)
-                {
-                    SDL_Rect rect;
-
-                    clear_screen--;
-
-                    rect.x = 0;
-                    rect.y = 0;
-                    rect.w = Game_Screen->w;
-                    rect.h = Game_Screen->h;
-                    SDL_FillRect(Game_Screen, &rect, 0);
-                }
-
-                Display_Flip_Procedure(Game_FrameBuffer, Game_Screen->pixels);
-
-                /* ??? */
-                SDL_UnlockSurface(Game_Screen);
-
-                VirtualKeyboard_Draw();
-
-                SDL_Flip(Game_Screen);
-            }
-        #endif
         }
 
         SDL_UnlockMutex(Game_ScreenMutex);
@@ -288,6 +187,8 @@ fprintf(stderr, "fps: %.3f    tps: %.3f\n", (float) NumDisplay * 1000 / (Current
 
         SDL_PushEvent(&event);
 
-        if (Thread_Exit) return 0;
+        if (Thread_Exit) break;
     }
+
+    return 0;
 }

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -25,13 +25,14 @@
 #if !defined(_WARCRAFT_PROC_VFS_H_INCLUDED_)
 #define _WARCRAFT_PROC_VFS_H_INCLUDED_
 
+#include "Game_defs.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern FILE *Game_fopen(const char *filename, const char *mode);
-extern int32_t Game_open(const char *pathname, int32_t flags, uint32_t mode);
-extern int32_t Game_unlink(const char *pathname);
+extern void * CCALL Game_fopen(const char *filename, const char *mode);
+extern int32_t CCALL Game_unlink(const char *pathname);
 
 #ifdef __cplusplus
 }

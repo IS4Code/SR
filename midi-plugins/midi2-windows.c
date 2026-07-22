@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -23,12 +23,20 @@
  */
 
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    #define PLUGIN_ENABLED
+#else
+    #undef PLUGIN_ENABLED
+#endif
+
+#ifdef PLUGIN_ENABLED
     #ifndef WINVER
     #define WINVER 0x0602
     #endif
     #include <windows.h>
     #include <cfgmgr32.h>
     #include <mmddk.h>
+    #include <limits.h>
+    #include <stddef.h>
 #endif
 
 #include <stdlib.h>
@@ -36,9 +44,18 @@
 #include <stdint.h>
 #include "midi-plugins2.h"
 
-static unsigned char *reset_controller_events = NULL;
+#ifdef _MSC_VER
+    #define EXPORT __declspec(dllexport)
+    #define strdup _strdup
+#elif defined __GNUC__
+    #define EXPORT __attribute__ ((visibility ("default")))
+#else
+    #define EXPORT
+#endif
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+static int midi_type;
+
+#ifdef PLUGIN_ENABLED
 // Multimedia Class Scheduler Service Functions
 typedef HANDLE(WINAPI *AvSetMmThreadCharacteristicsWFunc) (LPCWSTR TaskName, LPDWORD TaskIndex);
 typedef BOOL(WINAPI *AvRevertMmThreadCharacteristicsFunc) (HANDLE AvrtHandle);
@@ -47,17 +64,41 @@ typedef BOOL(WINAPI *AvRevertMmThreadCharacteristicsFunc) (HANDLE AvrtHandle);
 typedef CONFIGRET(WINAPI *CM_Register_Notification_Func) (PCM_NOTIFY_FILTER pFilter, PVOID pContext, PCM_NOTIFY_CALLBACK pCallback, PHCMNOTIFICATION pNotifyContext);
 typedef CONFIGRET(WINAPI *CM_Unregister_Notification_Func) (HCMNOTIFICATION NotifyContext);
 
+#if !defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
+	#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x800
+#endif
+
 enum {
-    NOTIFY_UNREGISTER = 1 << 0,
-    NOTIFY_REREGISTER = 1 << 1,
-    NOTIFY_NEWDEVICE  = 1 << 2
+	NOTIFY_UNREGISTER = 1 << 0,
+	NOTIFY_REREGISTER = 1 << 1,
+	NOTIFY_NEWDEVICE  = 1 << 2
 };
+
+typedef struct {
+	uint32_t tick;
+	uint32_t data_or_len;
+	void *sysex;
+	uint32_t time;
+} midi_event_info;
+
+typedef struct {
+	unsigned int time_division, last_tick, tempo, tempo_tick, num_allocated, num_events;
+	uint64_t tempo_time, last_time;
+	uint32_t next_sysex_time, event_time;
+	midi_event_info *events;
+} preprocess_state;
+
+typedef struct _midi_queue_info_ {
+	MIDIHDR header;
+	struct _midi_queue_info_ *next;
+	uint8_t buffer[65532];
+} midi_queue_info;
+
 
 static HMIDISTRM hStream = NULL;
 static HANDLE midi_thread_handle = NULL;
 static char *midi_stream_name = NULL;
 static LPWSTR lpDeviceInterfaceName = NULL;
-static unsigned char *initial_sysex_events = NULL;
 
 static HMODULE hAvrt = NULL;
 static AvSetMmThreadCharacteristicsWFunc dyn_AvSetMmThreadCharacteristicsW;
@@ -71,452 +112,169 @@ static HCMNOTIFICATION hNotificationHandle = NULL;
 static HCMNOTIFICATION hNotificationInstance = NULL;
 static volatile unsigned int notification_events = 0;
 
-static volatile int midi_quit = 0;
-static volatile int midi_loaded = 0;
-static int midi_playing = 0;
-static volatile int midi_loop_count = 0;
-static volatile uint8_t *midi_first_data = NULL;
-static volatile uint8_t *midi_next_data = NULL;
-static MIDIHDR midi_headers[4];
-static volatile int midi_header_wait = 0;
-static volatile int midi_header_send = 0;
+static volatile midi_queue_info *midi_queue_wait = NULL;
+static volatile midi_queue_info *midi_queue_send = NULL;
+
+static volatile midi_event_info *midi_events = NULL;
+static volatile unsigned int midi_current_event;
+static volatile uint32_t midi_base_time;
 
 static CRITICAL_SECTION midi_critical_section, notification_critical_section;
 
-#define GETU32FBE(buf) (			\
-            (uint32_t) ( (buf)[0] ) << 24 | \
-            (uint32_t) ( (buf)[1] ) << 16 | \
-            (uint32_t) ( (buf)[2] ) <<  8 | \
-            (uint32_t) ( (buf)[3] )       )
 
-#define GETU16FBE(buf) (			\
-            (uint32_t) ( (buf)[0] ) <<  8 | \
-            (uint32_t) ( (buf)[1] )       )
+static void calculate_next_sysex_tick(preprocess_state *state);
+static void calculate_event_time(preprocess_state *state);
+static void free_midi_data(midi_event_info *data);
 
-// Midi Status Bytes
-#define MIDI_STATUS_NOTE_OFF    0x08
-#define MIDI_STATUS_NOTE_ON     0x09
-#define MIDI_STATUS_AFTERTOUCH  0x0A
-#define MIDI_STATUS_CONTROLLER  0x0B
-#define MIDI_STATUS_PROG_CHANGE 0x0C
-#define MIDI_STATUS_PRESSURE    0x0D
-#define MIDI_STATUS_PITCH_WHEEL 0x0E
-#define MIDI_STATUS_SYSEX       0x0F
+#ifdef _WIN64
+static int (*dyn_add_midi_event)(preprocess_state *state, uint8_t status, uint8_t byte1, uint8_t byte2, const uint8_t *data_ptr, unsigned int data_len);
+static int (*dyn_send_initial_sysex_events)(unsigned char const *sysex_events);
+#define add_midi_event dyn_add_midi_event
+#define send_initial_sysex_events dyn_send_initial_sysex_events
+#else
+static int add_midi_event(preprocess_state *state, uint8_t status, uint8_t byte1, uint8_t byte2, const uint8_t *data_ptr, unsigned int data_len);
+static int send_initial_sysex_events(unsigned char const *sysex_events);
+#endif
 
-typedef struct {
-	const uint8_t *ptr;
-	unsigned int len, delta;
-	uint8_t event_status;
-	int eot;
-} midi_track_info;
+#include "midi2-common.h"
 
-typedef struct {
-	uint8_t *next;
-	unsigned int len;
-} midi_data_info;
+#ifdef _WIN64
+#undef add_midi_event
+#undef send_initial_sysex_events
+static void shutdown_plugin_common(void);
+#include "midi2-windows-midi2.h"
+#endif
 
-#define MAXIMUM_DATA_LENGTH (65536 - sizeof(midi_data_info))
 
-static unsigned int read_varlen(midi_track_info *track)
+static void calculate_next_sysex_tick(preprocess_state *state)
 {
-	unsigned int varlen, ___data;
-
-	varlen = 0;
-	if (track->len != 0)
-	{
-		do {
-			___data = *(track->ptr);
-			track->ptr++;
-			track->len--;
-			varlen = (varlen << 7) | (___data & 0x7f);
-		} while ((___data & 0x80) && (track->len != 0));
-	}
-
-	track->eot = (track->len == 0)?1:0;
-
-	return (track->eot)?0:varlen;
+	state->last_tick = (unsigned int)( ((state->next_sysex_time * (uint64_t)1000000 - state->tempo_time) * state->time_division + (state->tempo * (uint64_t) 1000 - 1)) / (state->tempo * (uint64_t) 1000) ) + state->tempo_tick;
 }
 
-static void free_midi_data(uint8_t *data)
+static void calculate_event_time(preprocess_state *state)
 {
-	while (data != NULL)
-	{
-		midi_data_info *info;
-		uint8_t *next;
+	div_t divres;
 
-		info = (midi_data_info *) &(data[MAXIMUM_DATA_LENGTH]);
-		next = info->next;
-		free(data);
-		data = next;
-	};
+	// calculate event time in nanoseconds
+	divres = div((int)(state->last_tick - state->tempo_tick), (int)state->time_division);
+
+	state->last_time = ( ((1000 * divres.rem) * (uint64_t)state->tempo) / state->time_division )
+	                 + ( (divres.quot * (uint64_t)state->tempo) * 1000 )
+	                 + state->tempo_time
+	                 ;
+
+	//state->last_time = ( (((state->last_tick - state->tempo_tick) * (uint64_t) 1000) * state->tempo) / state->time_division ) + state->tempo_time;
+
+	// calculate event time in milliseconds
+	state->event_time = (uint32_t)(state->last_time / 1000000);
 }
 
-static int readmidi(const uint8_t *midi, unsigned int midilen, unsigned int *number_of_tracks_ptr, unsigned int *time_division_ptr, midi_track_info **tracks_ptr)
+static int add_midi_event(preprocess_state *state, uint8_t status, uint8_t byte1, uint8_t byte2, const uint8_t *data_ptr, unsigned int data_len)
 {
-	unsigned int format_type, number_of_tracks, time_division, index;
-	midi_track_info *tracks;
-	const uint8_t *cur_position;
-	int retval;
+	midi_event_info event;
 
-	if (midilen < 14)
+	event.tick = state->last_tick;
+	event.sysex = NULL;
+	event.time = state->event_time;
+
+	if ((status >> 4) != MIDI_STATUS_SYSEX)
 	{
-		// not enough place for midi header
-		return 1;
-	}
-
-	if (GETU32FBE(midi) != 0x4D546864)
-	{
-		// "MThd"
-		return 2;
-	}
-
-	if (GETU32FBE(midi + 4) != 6)
-	{
-		// wrong midi header size
-		return 3;
-	}
-
-	format_type = GETU16FBE(midi + 8);
-	number_of_tracks = GETU16FBE(midi + 10);
-	time_division = GETU16FBE(midi + 12);
-
-	if ((format_type != 0) && (format_type != 1))
-	{
-		// unsupported midi format
-		return 4;
-	}
-
-	if ((number_of_tracks == 0) || ((format_type == 0) && (number_of_tracks != 1)))
-	{
-		// wrong number of tracks
-		return 5;
-	}
-
-	if (time_division & 0x8000)
-	{
-		if (((time_division & 0x7f00) == 0) || ((time_division & 0xff) == 0))
-		{
-			// wrong time division
-			return 6;
-		}
+		event.data_or_len = MEVT_F_SHORT | (status) | (((uint32_t)byte1) << 8) | (((uint32_t)byte2) << 16);
 	}
 	else
 	{
-		if (time_division == 0)
+		if (status == 0xff) // meta events
 		{
-			// wrong time division
-			return 6;
+			if ((byte1 == 0x51) && (data_len == 3)) // set tempo
+			{
+				// time_division is assumed to be positive (ticks per beat / PPQN - Pulses (i.e. clocks) Per Quarter Note)
+
+				event.data_or_len = (((uint32_t)MEVT_TEMPO) << 24) | (((uint32_t)(data_ptr[0])) << 16) | (((uint32_t)(data_ptr[1])) << 8) | ((uint32_t)(data_ptr[2]));
+
+				state->tempo = MEVT_EVENTPARM(event.data_or_len);
+				state->tempo_tick = state->last_tick;
+				state->tempo_time = state->last_time;
+			}
+			else return 0;
 		}
+		else if ((status == 0xf0) || (status == 0xf7)) // sysex
+		{
+			event.data_or_len = data_len + ((status == 0xf0)?1:0);
+			if (event.data_or_len == 0) return 0;
+			if ((event.data_or_len > 0xffffff) || (offsetof(MIDIEVENT, dwParms) + ((event.data_or_len + 3) & ~3) > sizeof(midi_queue_send->buffer))) return 0;
+
+			event.sysex = malloc(event.data_or_len);
+			if (event.sysex == NULL) return 12;
+
+			event.data_or_len |= MEVT_F_LONG;
+
+			if (status == 0xf0)
+			{
+				((uint8_t *)event.sysex)[0] = 0xf0;
+				memcpy(((uint8_t *)event.sysex) + 1, data_ptr, data_len);
+			}
+			else
+			{
+				memcpy(event.sysex, data_ptr, data_len);
+			}
+
+			if (mt32_delay)
+			{
+				if (event.time < state->next_sysex_time)
+				{
+					// calculate new event tick and time
+					calculate_next_sysex_tick(state);
+					calculate_event_time(state);
+
+					event.tick = state->last_tick;
+					event.time = state->event_time;
+				}
+
+				state->next_sysex_time = event.time + (40 + 10 + ((MEVT_EVENTPARM(event.data_or_len) * 10000 + 31249) / 31250));
+			}
+		}
+		else if ((status == 0xf4) && mt32_delay) // extra event
+		{
+			event.data_or_len = MEVT_NOP << 24;
+		}
+		else return 0;
 	}
 
-	tracks = (midi_track_info *) malloc(number_of_tracks * sizeof(midi_track_info));
-	if (tracks == NULL)
+	if ((state->num_events + 1) >= state->num_allocated)
 	{
-		return 7;
+		midi_event_info *new_events;
+
+		new_events = (midi_event_info *) realloc(state->events, sizeof(midi_event_info) * state->num_allocated * 2);
+		if (new_events == NULL) return 13;
+
+		state->num_allocated = state->num_allocated * 2;
+		state->events = new_events;
 	}
 
-	// find tracks
-	cur_position = midi + 14;
-	for (index = 0; index < number_of_tracks; index++)
-	{
-		unsigned int track_len;
-
-		if ((cur_position - midi) + 8 > midilen)
-		{
-			// not enough place for track header
-			retval = 8;
-			goto midi_error_1;
-		}
-
-		if (GETU32FBE(cur_position) != 0x4D54726B)
-		{
-			// "MTrk"
-			retval = 9;
-			goto midi_error_1;
-		}
-
-		track_len = GETU32FBE(cur_position + 4);
-
-		if ((cur_position - midi) + track_len > midilen)
-		{
-			// not enough place for track
-			retval = 10;
-			goto midi_error_1;
-		}
-
-		tracks[index].len = track_len;
-		tracks[index].ptr = cur_position + 8;
-		tracks[index].event_status = 0;
-		tracks[index].eot = (track_len == 0)?1:0;
-
-		cur_position = cur_position + 8 + track_len;
-	}
-
-	*number_of_tracks_ptr = number_of_tracks;
-	*time_division_ptr = time_division;
-	*tracks_ptr = tracks;
+	state->num_events++;
+	state->events[state->num_events] = event;
+	state->events[0].data_or_len = state->num_events;
 
 	return 0;
-
-midi_error_1:
-	free(tracks);
-	return retval;
 }
 
-static int preprocessmidi(const uint8_t *midi, unsigned int midilen, unsigned int *timediv, uint8_t **dataptr)
+static void free_midi_data(midi_event_info *data)
 {
-	unsigned int number_of_tracks, time_division, index, varlen;
-	midi_track_info *tracks, *curtrack;
-	uint8_t *first_data, *curdata;
-	midi_data_info *curinfo;
-	int retval, lasttracknum, eventextralen;
-	MIDIEVENT event;
+	unsigned int index;
 
-	retval = readmidi(midi, midilen, &number_of_tracks, &time_division, &tracks);
-	if (retval) return retval;
-
-	// prepare tracks
-	for (index = 0; index < number_of_tracks; index++)
+	if (data != NULL)
 	{
-		curtrack = &(tracks[index]);
+		for (index = data[0].data_or_len; index != 0; index--)
+		{
+			if (data[index].sysex != NULL)
+			{
+				free(data[index].sysex);
+				data[index].sysex = NULL;
+			}
+		}
 
-		// read delta
-		curtrack->delta = read_varlen(curtrack);
+		free(data);
 	}
-
-	first_data = (uint8_t *) malloc(65536);
-	if (first_data == NULL)
-	{
-		retval = 11;
-		goto midi_error_1;
-	}
-
-	curdata = first_data;
-	curinfo = (midi_data_info *) &(curdata[MAXIMUM_DATA_LENGTH]);
-	curinfo->next = NULL;
-	curinfo->len = 0;
-
-	lasttracknum = -1;
-	while (1)
-	{
-		curtrack = NULL;
-
-		if ((lasttracknum >= 0) && (!tracks[lasttracknum].eot) && (tracks[lasttracknum].delta == 0))
-		{
-			curtrack = &(tracks[lasttracknum]);
-		}
-		else
-		{
-			unsigned int mindelta;
-			mindelta = UINT_MAX;
-			for (index = 0; index < number_of_tracks; index++)
-			{
-				if ((!tracks[index].eot) && (tracks[index].delta < mindelta))
-				{
-					mindelta = tracks[index].delta;
-					curtrack = &(tracks[index]);
-					lasttracknum = index;
-				}
-			}
-		}
-
-		if (curtrack == NULL) break;
-
-		// update deltas
-		if (curtrack->delta != 0)
-		for (index = 0; index < number_of_tracks; index++)
-		{
-			if ((!tracks[index].eot) && (index != lasttracknum))
-			{
-				tracks[index].delta -= curtrack->delta;
-			}
-		}
-
-		// read and process data
-		event.dwDeltaTime = curtrack->delta;
-		event.dwStreamID = 0;
-
-		eventextralen = -1;
-
-		if (*curtrack->ptr & 0x80)
-		{
-			curtrack->event_status = *curtrack->ptr;
-			curtrack->ptr += 1;
-			curtrack->len -= 1;
-		}
-
-		switch (curtrack->event_status >> 4)
-		{
-			case MIDI_STATUS_NOTE_OFF:
-			case MIDI_STATUS_NOTE_ON:
-			case MIDI_STATUS_AFTERTOUCH:
-			case MIDI_STATUS_CONTROLLER:
-			case MIDI_STATUS_PITCH_WHEEL:
-				if (curtrack->len >= 2)
-				{
-					event.dwEvent = MEVT_F_SHORT | (curtrack->event_status) | (((uint32_t)(curtrack->ptr[0])) << 8) | (((uint32_t)(curtrack->ptr[1])) << 16);
-					curtrack->ptr += 2;
-					curtrack->len -= 2;
-					eventextralen = 0;
-				}
-				else
-				{
-					curtrack->len = 0;
-					curtrack->eot = 1;
-				}
-
-				break;
-
-			case MIDI_STATUS_PROG_CHANGE:
-			case MIDI_STATUS_PRESSURE:
-				if (curtrack->len >= 1)
-				{
-					event.dwEvent = MEVT_F_SHORT | (curtrack->event_status) | (((uint32_t)(curtrack->ptr[0])) << 8);
-					curtrack->ptr += 1;
-					curtrack->len -= 1;
-					eventextralen = 0;
-				}
-				else
-				{
-					curtrack->len = 0;
-					curtrack->eot = 1;
-				}
-				break;
-
-			case MIDI_STATUS_SYSEX:
-				if (curtrack->event_status == 0xff)
-				{
-					if (curtrack->len >= 2)
-					{
-						if (curtrack->ptr[0] == 0x2f) // end of track
-						{
-							curtrack->len = 0;
-							curtrack->eot = 1;
-						}
-						else
-						{
-							if ((curtrack->ptr[0] == 0x51) && (curtrack->ptr[1] == 3) && (curtrack->len >= 5)) // set tempo
-							{
-								event.dwEvent = (((uint32_t)MEVT_TEMPO) << 24) | (((uint32_t)(curtrack->ptr[2])) << 16) | (((uint32_t)(curtrack->ptr[3])) << 8) | ((uint32_t)(curtrack->ptr[4]));
-								eventextralen = 0;
-							}
-
-							// read length and skip event
-							curtrack->ptr += 1;
-							curtrack->len -= 1;
-							varlen = read_varlen(curtrack);
-							if (varlen <= curtrack->len)
-							{
-								curtrack->ptr += varlen;
-								curtrack->len -= varlen;
-							}
-							else
-							{
-								curtrack->len = 0;
-								curtrack->eot = 1;
-							}
-						}
-					}
-					else
-					{
-						curtrack->len = 0;
-						curtrack->eot = 1;
-					}
-				}
-				else if ((curtrack->event_status == 0xf0) || (curtrack->event_status == 0xf7))
-				{
-					const uint8_t *startevent;
-
-					startevent = curtrack->ptr;
-
-					varlen = read_varlen(curtrack);
-					if (varlen <= curtrack->len)
-					{
-						curtrack->ptr += varlen;
-						curtrack->len -= varlen;
-
-						eventextralen = 1 + curtrack->ptr - startevent;
-						event.dwEvent = MEVT_F_LONG | (eventextralen & 0xffffff);
-					}
-					else
-					{
-						curtrack->len = 0;
-						curtrack->eot = 1;
-					}
-				}
-				else
-				{
-					curtrack->len = 0;
-					curtrack->eot = 1;
-				}
-				break;
-
-			default:
-				curtrack->len = 0;
-				curtrack->eot = 1;
-				break;
-		}
-
-		if (eventextralen >= 0)
-		{
-#define SHORT_EVENT_LENGTH (sizeof(event) - sizeof(event.dwParms))
-
-			if ((curinfo->len + SHORT_EVENT_LENGTH + ((eventextralen + 3) & ~3)) > MAXIMUM_DATA_LENGTH)
-			{
-				if ((SHORT_EVENT_LENGTH + ((eventextralen + 3) & ~3)) > MAXIMUM_DATA_LENGTH)
-				{
-					retval = 12;
-					goto midi_error_2;
-				}
-
-				curinfo->next = (uint8_t *) malloc(65536);
-				if (curinfo->next == NULL)
-				{
-					retval = 13;
-					goto midi_error_2;
-				}
-
-				curdata = curinfo->next;
-				curinfo = (midi_data_info *) &(curdata[MAXIMUM_DATA_LENGTH]);
-				curinfo->next = NULL;
-				curinfo->len = 0;
-			}
-
-			memcpy(&(curdata[curinfo->len]), &event, SHORT_EVENT_LENGTH);
-			curinfo->len += SHORT_EVENT_LENGTH;
-
-			if (eventextralen > 0)
-			{
-				curdata[curinfo->len] = curtrack->event_status;
-				memcpy(&(curdata[curinfo->len + 1]), 1 + curtrack->ptr - eventextralen, eventextralen - 1);
-				curinfo->len += (eventextralen + 3) & ~3;
-			}
-
-#undef SHORT_EVENT_LENGTH
-		}
-
-		// read delta
-		curtrack->delta = read_varlen(curtrack);
-	};
-
-	if ((curdata == first_data) && (curinfo->len == 0))
-	{
-		retval = 14;
-		goto midi_error_2;
-	}
-
-	// return values
-	*timediv = time_division;
-	*dataptr = first_data;
-
-	free(tracks);
-	return 0;
-
-midi_error_2:
-	free_midi_data(first_data);
-midi_error_1:
-	free(tracks);
-	return retval;
 }
 
 
@@ -524,14 +282,21 @@ static int send_initial_sysex_events(unsigned char const *sysex_events);
 static void reset_playing(void);
 static void get_device_interface_name(UINT uDeviceID);
 static void register_notifications(void);
+static midi_queue_info *allocate_queue_info(void);
 
 static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 {
-	unsigned int num_waiting, send_next, current_notification_events;
-	int midi_stream_exists;
-	midi_data_info *midi_info;
+	midi_event_info *events;
+	unsigned int current_event, num_events, current_notification_events, insert_events;
+	uint32_t base_time, stream_time;
+	int do_sleep, midi_stream_exists, chan;
+	midi_queue_info *current_queue_wait, *current_queue_send, *qinfo;
 	HANDLE AvrtHandle;
-	DWORD TaskIndex;
+	DWORD TaskIndex, BaseTicks;
+	MMTIME mmtime;
+	MIDIEVENT *event;
+
+	BaseTicks = GetTickCount();
 
 	AvrtHandle = NULL;
 	TaskIndex = 0;
@@ -540,11 +305,16 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 		AvrtHandle = dyn_AvSetMmThreadCharacteristicsW(L"Pro Audio", &TaskIndex);
 	}
 
+	do_sleep = 1;
 	midi_stream_exists = 1;
 
-	while (1)
+	for (;;)
 	{
-		Sleep(10);
+		if (do_sleep)
+		{
+			do_sleep = 0;
+			Sleep(10);
+		}
 
 		if (midi_quit)
 		{
@@ -575,7 +345,7 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 					EnterCriticalSection(&midi_critical_section);
 					if (midi_loaded && (midi_loop_count == 0))
 					{
-						midi_next_data = NULL;
+						midi_eof = 1;
 					}
 					LeaveCriticalSection(&midi_critical_section);
 				}
@@ -592,7 +362,7 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 
 			if ((current_notification_events & NOTIFY_NEWDEVICE) && !midi_stream_exists)
 			{
-				int numDevices, devid;
+				UINT numDevices, devid;
 				MIDIOUTCAPS midicaps;
 				UINT uDeviceID;
 				MIDIPROPTEMPO miditempo;
@@ -614,8 +384,28 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 
 				if (uDeviceID != numDevices)
 				{
+					int was_playing;
+
 					midi_stream_exists = 1;
 					EnterCriticalSection(&midi_critical_section);
+
+					was_playing = (midi_loaded && midi_playing);
+
+					current_queue_wait = (midi_queue_info *) midi_queue_wait;
+					current_queue_send = (midi_queue_info *) midi_queue_send;
+					while (current_queue_wait != current_queue_send)
+					{
+						if (current_queue_wait->header.dwFlags & MHDR_DONE)
+						{
+							current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+							current_queue_wait = current_queue_wait->next;
+						}
+						else
+						{
+							Sleep(1);
+						}
+					}
+					midi_queue_wait = current_queue_wait;
 
 					if (midi_loaded)
 					{
@@ -626,16 +416,9 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 						midiStreamProperty(hStream, (LPBYTE)&miditempo, MIDIPROP_GET | MIDIPROP_TEMPO);
 					}
 
-					midiStreamStop(hStream);
-
-					while (midi_header_wait != midi_header_send)
-					{
-						midiOutUnprepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_wait]), sizeof(MIDIHDR));
-						midi_header_wait = (midi_header_wait + 1) & 3;
-					};
-
 					midiStreamClose(hStream);
 					hStream = NULL;
+					midi_playing = 0;
 
 					if (lpDeviceInterfaceName != NULL)
 					{
@@ -648,6 +431,11 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 						get_device_interface_name(uDeviceID);
 						register_notifications();
 
+						if (midi_type == 2)
+						{
+							mt32_initialize_gm();
+						}
+
 						if (initial_sysex_events != NULL && *initial_sysex_events == 0xf0)
 						{
 							send_initial_sysex_events(initial_sysex_events);
@@ -655,32 +443,63 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 
 						reset_playing();
 
-						if (midi_loaded)
+						if (midi_loaded && !midi_eof)
 						{
+							if (midi_type == 2)
+							{
+								mt32_reinstall_timbres();
+							}
+
 							midiStreamProperty(hStream, (LPBYTE)&miditimediv, MIDIPROP_SET | MIDIPROP_TIMEDIV);
 
 							midiStreamProperty(hStream, (LPBYTE)&miditempo, MIDIPROP_SET | MIDIPROP_TEMPO);
 
-							if (midi_next_data != NULL)
+							for (chan = 0; chan < MIDI_CHANNELS; chan++)
 							{
-								midi_next_data = midi_first_data;
-								midi_header_wait = midi_header_send = 0;
+								channel_volume[chan] = 100;
 							}
 
-							if (midi_playing)
+							// set current volume to a different value than new volume in order to set the channel volume at start of playing
+							midi_current_volume = midi_new_volume ^ 1;
+
+							memset(channel_notes, 0, 128*MIDI_CHANNELS*sizeof(int));
+
+							midi_current_event = 1;
+						}
+
+						if (was_playing)
+						{
+							if (MMSYSERR_NOERROR == midiStreamRestart(hStream))
 							{
-								midiStreamRestart(hStream);
+								midi_playing = 1;
 							}
 						}
+
+						mmtime.wType = TIME_MS;
+						if (MMSYSERR_NOERROR != midiStreamPosition(hStream, &mmtime, sizeof(MMTIME)))
+						{
+							if (midi_playing)
+							{
+								if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+								{
+									midi_playing = 0;
+								}
+							}
+							if (midi_loaded)
+							{
+								free_midi_data((midi_event_info *)midi_events);
+								midi_loaded = 0;
+							}
+						}
+
+						midi_base_time = mmtime.u.ms;
 					}
 					else
 					{
 						hStream = NULL;
 						if (midi_loaded)
 						{
-							free_midi_data((uint8_t *) midi_first_data);
-							midi_first_data = midi_next_data = NULL;
-							midi_header_wait = midi_header_send = 0;
+							free_midi_data((midi_event_info *)midi_events);
 							midi_loaded = 0;
 						}
 					}
@@ -690,131 +509,477 @@ static DWORD WINAPI MidiThreadProc(LPVOID lpParameter)
 			}
 		}
 
-		if (!midi_loaded) continue;
-
-		num_waiting = (midi_header_send + 4 - midi_header_wait) & 3;
-		if (num_waiting >= 2) continue;
+		if ((!midi_loaded) || (!midi_playing))
+		{
+			do_sleep = 1;
+			continue;
+		}
 
 
 		EnterCriticalSection(&midi_critical_section);
 
-		if (!midi_loaded)
+		if ((!midi_loaded) || (!midi_playing) || (midi_eof))
 		{
 			LeaveCriticalSection(&midi_critical_section);
+			do_sleep = 1;
 			continue;
 		}
 
-		num_waiting = (midi_header_send + 4 - midi_header_wait) & 3;
-		while (num_waiting > 0)
+		if ((!midi_stream_exists) && (midi_loop_count == 0))
 		{
-			if (!(midi_headers[midi_header_wait].dwFlags & MHDR_DONE))
-			{
-				break;
-			}
-
-			midiOutUnprepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_wait]), sizeof(MIDIHDR));
-			midi_header_wait = (midi_header_wait + 1) & 3;
-
-			num_waiting = (midi_header_send + 4 - midi_header_wait) & 3;
+			midi_eof = 1;
+			LeaveCriticalSection(&midi_critical_section);
+			do_sleep = 1;
+			continue;
 		}
 
-		while ((num_waiting < 2) && (midi_next_data != NULL))
+		events = (midi_event_info *) midi_events;
+		current_event = midi_current_event;
+		base_time = midi_base_time;
+
+		num_events = events[0].data_or_len;
+
+		current_queue_wait = (midi_queue_info *) midi_queue_wait;
+		if (current_queue_wait->header.dwFlags & MHDR_DONE)
 		{
-			midi_info = (midi_data_info *) &(midi_next_data[MAXIMUM_DATA_LENGTH]);
+			do
+			{
+				current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+				current_queue_wait = current_queue_wait->next;
+			} while (current_queue_wait->header.dwFlags & MHDR_DONE);
+			midi_queue_wait = current_queue_wait;
+		}
 
-			midi_headers[midi_header_send].lpData = (LPSTR) midi_next_data;
-			midi_headers[midi_header_send].dwBufferLength = midi_info->len;
-			midi_headers[midi_header_send].dwBytesRecorded = midi_info->len;
-			midi_headers[midi_header_send].dwFlags = 0;
+		if (current_event > num_events)
+		{
+			if (current_queue_wait != midi_queue_send)
+			{
+				LeaveCriticalSection(&midi_critical_section);
+				do_sleep = 1;
+				continue;
+			}
 
-			if (MMSYSERR_NOERROR != midiOutPrepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR)))
+			if (midi_loop_count == 0)
+			{
+				midi_eof = 1;
+				LeaveCriticalSection(&midi_critical_section);
+				do_sleep = 1;
+				continue;
+			}
+			else if (midi_loop_count > 0)
+			{
+				midi_loop_count--;
+			}
+
+			// looping
+			base_time += events[num_events].time;
+
+			current_event = 1;
+
+			midi_current_event = current_event;
+			midi_base_time = base_time;
+		}
+
+		insert_events = 0;
+		if (midi_stream_exists)
+		{
+			if (midi_new_volume != midi_current_volume)
+			{
+				midi_current_volume = midi_new_volume;
+				insert_events |= 1;
+			}
+			if (state_mt32_display == 5)
+			{
+				if (GetTickCount() - BaseTicks >= 5000)
+				{
+					state_mt32_display = 2;
+					insert_events |= 2;
+				}
+			}
+		}
+
+		if (insert_events)
+		{
+			current_queue_send = (midi_queue_info *) midi_queue_send;
+			if (current_queue_send->next == current_queue_wait)
+			{
+				qinfo = allocate_queue_info();
+				if (qinfo == NULL)
+				{
+					LeaveCriticalSection(&midi_critical_section);
+					do_sleep = 1;
+					continue;
+				}
+
+				qinfo->next = current_queue_wait;
+				current_queue_send->next = qinfo;
+			}
+
+			current_queue_send->header.dwBytesRecorded = 0;
+
+			if (insert_events & 1)
+			{
+				for (chan = 0; chan < MIDI_CHANNELS; chan++)
+				{
+					event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+
+					event->dwDeltaTime = 0;
+					event->dwStreamID = 0;
+					event->dwEvent = MEVT_F_SHORT | 0xb0 | chan | (7 << 8) | (((midi_current_volume * channel_volume[chan]) / 127) << 16);
+
+					current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms);
+				}
+			}
+			if (insert_events & 2)
+			{
+				event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+
+				event->dwDeltaTime = 0;
+				event->dwStreamID = 0;
+				event->dwEvent = MEVT_F_LONG | (sizeof(sysex_mt32_reset_display) - 1);
+
+				memcpy(event->dwParms, sysex_mt32_reset_display, sizeof(sysex_mt32_reset_display) - 1);
+				current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms) + ((sizeof(sysex_mt32_reset_display) + 2) & ~3);
+			}
+
+			if (MMSYSERR_NOERROR == midiStreamOut(hStream, &(current_queue_send->header), sizeof(MIDIHDR)))
+			{
+				midi_queue_send = current_queue_send->next;
+			}
+		}
+
+		mmtime.wType = TIME_MS;
+		if (MMSYSERR_NOERROR != midiStreamPosition(hStream, &mmtime, sizeof(MMTIME)))
+		{
+			LeaveCriticalSection(&midi_critical_section);
+			do_sleep = 1;
+			continue;
+		}
+
+		stream_time = mmtime.u.ms - base_time;
+
+		if ((current_event > num_events) || (events[current_event].time > stream_time + 90))
+		{
+			LeaveCriticalSection(&midi_critical_section);
+			do_sleep = 1;
+			continue;
+		}
+
+		current_queue_send = (midi_queue_info *) midi_queue_send;
+		if (current_queue_send->next == current_queue_wait)
+		{
+			qinfo = allocate_queue_info();
+			if (qinfo == NULL)
+			{
+				LeaveCriticalSection(&midi_critical_section);
+				do_sleep = 1;
+				continue;
+			}
+
+			qinfo->next = current_queue_wait;
+			current_queue_send->next = qinfo;
+		}
+
+		current_queue_send->header.dwBytesRecorded = 0;
+
+		while ((current_event <= num_events) && (events[current_event].time <= stream_time + 190))
+		{
+			if (current_queue_send->header.dwBytesRecorded + offsetof(MIDIEVENT, dwParms) > sizeof(current_queue_send->buffer))
 			{
 				break;
 			}
 
-			if (MMSYSERR_NOERROR != midiStreamOut(hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR)))
+			event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+			event->dwDeltaTime = events[current_event].tick - events[current_event - 1].tick;
+			event->dwStreamID = 0;
+			event->dwEvent = events[current_event].data_or_len;
+
+			if (events[current_event].sysex != NULL)
 			{
-				midiOutUnprepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR));
-				break;
-			}
-
-			if (midi_info->next == NULL)
-			{
-				if (midi_loop_count == 0)
-				{
-					midi_next_data = NULL;
-					break;
-				}
-				else if (midi_loop_count > 0)
-				{
-					midi_loop_count--;
-				}
-			}
-
-			send_next = ((midi_info->next == NULL) && (midi_next_data != midi_first_data))?1:0;
-
-			midi_header_send = (midi_header_send + 1) & 3;
-			midi_next_data = (midi_info->next == NULL)?midi_first_data:midi_info->next;
-
-			if (send_next)
-			{
-				midi_info = (midi_data_info *) &(midi_next_data[MAXIMUM_DATA_LENGTH]);
-
-				midi_headers[midi_header_send].lpData = (LPSTR) midi_next_data;
-				midi_headers[midi_header_send].dwBufferLength = midi_info->len;
-				midi_headers[midi_header_send].dwBytesRecorded = midi_info->len;
-				midi_headers[midi_header_send].dwFlags = 0;
-
-				if (MMSYSERR_NOERROR != midiOutPrepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR)))
+				if (current_queue_send->header.dwBytesRecorded + offsetof(MIDIEVENT, dwParms) + ((MEVT_EVENTPARM(event->dwEvent) + 3) & ~3) > sizeof(current_queue_send->buffer))
 				{
 					break;
 				}
 
-				if (MMSYSERR_NOERROR != midiStreamOut(hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR)))
-				{
-					midiOutUnprepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_send]), sizeof(MIDIHDR));
-					break;
-				}
+				memcpy(event->dwParms, events[current_event].sysex, MEVT_EVENTPARM(event->dwEvent));
+				current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms) + ((MEVT_EVENTPARM(event->dwEvent) + 3) & ~3);
+			}
+			else
+			{
+				current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms);
 
-				midi_header_send = (midi_header_send + 1) & 3;
-				midi_next_data = (midi_info->next == NULL)?midi_first_data:midi_info->next;
+				switch ((event->dwEvent >> 4) & 0x0f)
+				{
+					case MIDI_STATUS_NOTE_ON:
+						if (((event->dwEvent >> 16) & 0xff) != 0)
+						{
+							// note on
+							channel_notes[event->dwEvent & 0x0f][(event->dwEvent >> 8) & 0x7f]++;
+							break;
+						}
+						// fallthrough
+					case MIDI_STATUS_NOTE_OFF:
+						// note off
+						if ((channel_notes[event->dwEvent & 0x0f][(event->dwEvent >> 8) & 0x7f]) > 0)
+						{
+							channel_notes[event->dwEvent & 0x0f][(event->dwEvent >> 8) & 0x7f]--;
+						}
+						break;
+					case MIDI_STATUS_CONTROLLER:
+						if (((event->dwEvent >> 8) & 0xff) == 7)
+						{
+							// volume
+							channel_volume[event->dwEvent & 0x0f] = (event->dwEvent >> 16) & 0x7f;
+							event->dwEvent = (event->dwEvent & 0xff00ffff) | (((midi_current_volume * channel_volume[event->dwEvent & 0x0f]) / 127) << 16);
+						}
+						break;
+					default:
+						break;
+				}
 			}
 
-			num_waiting = (midi_header_send + 4 - midi_header_wait) & 3;
+			current_event++;
+		}
+
+		midi_current_event = current_event;
+
+		if (current_queue_send->header.dwBytesRecorded && midi_stream_exists)
+		{
+			if (MMSYSERR_NOERROR == midiStreamOut(hStream, &(current_queue_send->header), sizeof(MIDIHDR)))
+			{
+				midi_queue_send = current_queue_send->next;
+			}
 		}
 
 		LeaveCriticalSection(&midi_critical_section);
-	};
+	}
 }
 
 
 static int send_initial_sysex_events(unsigned char const *sysex_events)
 {
-	int events_len;
+	int events_len, len, delay_len, min_delay;
+	uint32_t next_sysex_delta;
+	midi_queue_info *current_queue_wait, *current_queue_send;
+	MIDIEVENT *event;
+	MMTIME mmtime;
 
 	if (hStream == NULL) return 0;
 
 	events_len = 0;
 
-	while (*sysex_events == 0xf0)
+	EnterCriticalSection(&midi_critical_section);
+
+	if (!midi_playing)
 	{
-		int len;
-		MIDIHDR midihdr;
+		if (MMSYSERR_NOERROR == midiStreamRestart(hStream))
+		{
+			midi_playing = 1;
+		}
 
-		len = 2;
-		while (sysex_events[len - 1] != 0xf7) len++;
+		mmtime.wType = TIME_MS;
+		if (MMSYSERR_NOERROR != midiStreamPosition(hStream, &mmtime, sizeof(MMTIME)))
+		{
+			if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+			{
+				midi_playing = 0;
+			}
+			LeaveCriticalSection(&midi_critical_section);
+			return 0;
+		}
 
-		midihdr.lpData = (LPSTR)sysex_events;
-		midihdr.dwBufferLength = len;
-		midihdr.dwFlags = 0;
+		midi_base_time = mmtime.u.ms;
+	}
 
-		sysex_events += len;
-		events_len += len;
+	if (midi_playing)
+	{
+		current_queue_wait = (midi_queue_info *) midi_queue_wait;
+		current_queue_send = (midi_queue_info *) midi_queue_send;
+		while (current_queue_wait != current_queue_send)
+		{
+			if (current_queue_wait->header.dwFlags & MHDR_DONE)
+			{
+				current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+				current_queue_wait = current_queue_wait->next;
+			}
+			else
+			{
+				Sleep(1);
+			}
+		}
 
-		midiOutPrepareHeader((HMIDIOUT)hStream, &midihdr, sizeof(midihdr));
-		midiOutLongMsg((HMIDIOUT)hStream, &midihdr, sizeof(midihdr));
-		midiOutUnprepareHeader((HMIDIOUT)hStream, &midihdr, sizeof(midihdr));
-	};
+		current_queue_send->header.dwBytesRecorded = 0;
+		next_sysex_delta = 0;
+
+		if (mt32_delay)
+		{
+			MIDIPROPTIMEDIV miditimediv;
+
+			miditimediv.cbStruct = sizeof(miditimediv);
+			if (MMSYSERR_NOERROR != midiStreamProperty(hStream, (LPBYTE)&miditimediv, MIDIPROP_GET | MIDIPROP_TIMEDIV))
+			{
+				if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+				{
+					midi_playing = 0;
+				}
+				LeaveCriticalSection(&midi_critical_section);
+				return 0;
+			}
+
+			mmtime.wType = TIME_MS;
+			if (MMSYSERR_NOERROR != midiStreamPosition(hStream, &mmtime, sizeof(MMTIME)))
+			{
+				if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+				{
+					midi_playing = 0;
+				}
+				LeaveCriticalSection(&midi_critical_section);
+				return 0;
+			}
+
+			next_sysex_delta = (mmtime.u.ms - midi_base_time) + 40 + 10 + 10;
+
+			event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+			event->dwDeltaTime = 0;
+			event->dwStreamID = 0;
+			event->dwEvent = (MEVT_TEMPO << 24) | (miditimediv.dwTimeDiv * 1000);
+
+			current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms);
+		}
+
+		while (*sysex_events == 0xf0)
+		{
+			len = 2;
+			while (sysex_events[len - 1] != 0xf7) len++;
+
+			delay_len = 0;
+			min_delay = 0;
+			if (!(sysex_events[len] & 0x80))
+			{
+				delay_len++;
+				min_delay = sysex_events[len];
+				if (!(sysex_events[len + 1] & 0x80))
+				{
+					delay_len++;
+					min_delay |= (sysex_events[len + 1] & 7) << 7;
+				}
+			}
+
+			if ((len > 0xffffff) || (offsetof(MIDIEVENT, dwParms) + ((len + 3) & ~3) > sizeof(current_queue_send->buffer)))
+			{
+				// too long sysex - skip it
+				sysex_events += len + delay_len;
+				events_len += len + delay_len;
+				continue;
+			}
+
+			if (current_queue_send->header.dwBytesRecorded + offsetof(MIDIEVENT, dwParms) + ((len + 3) & ~3) > sizeof(current_queue_send->buffer))
+			{
+				if (MMSYSERR_NOERROR == midiStreamOut(hStream, &(current_queue_send->header), sizeof(MIDIHDR)))
+				{
+					current_queue_send = current_queue_send->next;
+				}
+
+				current_queue_send->header.dwBytesRecorded = 0;
+
+				while (current_queue_wait != current_queue_send)
+				{
+					if (current_queue_wait->header.dwFlags & MHDR_DONE)
+					{
+						current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+						current_queue_wait = current_queue_wait->next;
+					}
+					else
+					{
+						Sleep(1);
+					}
+				}
+			}
+
+			event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+			event->dwDeltaTime = next_sysex_delta;
+			event->dwStreamID = 0;
+			event->dwEvent = MEVT_F_LONG | len;
+
+			memcpy(event->dwParms, sysex_events, len);
+			current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms) + ((len + 3) & ~3);
+
+			sysex_events += len + delay_len;
+			events_len += len + delay_len;
+
+			if (mt32_delay)
+			{
+				if (min_delay < 40) min_delay = 40;
+				next_sysex_delta = min_delay + 10 + ((len * 10000 + 31249) / 31250);
+			}
+		};
+
+		events_len++;
+
+		if (mt32_delay)
+		{
+			if (current_queue_send->header.dwBytesRecorded + offsetof(MIDIEVENT, dwParms) > sizeof(current_queue_send->buffer))
+			{
+				if (MMSYSERR_NOERROR == midiStreamOut(hStream, &(current_queue_send->header), sizeof(MIDIHDR)))
+				{
+					current_queue_send = current_queue_send->next;
+				}
+
+				current_queue_send->header.dwBytesRecorded = 0;
+
+				while (current_queue_wait != current_queue_send)
+				{
+					if (current_queue_wait->header.dwFlags & MHDR_DONE)
+					{
+						current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+						current_queue_wait = current_queue_wait->next;
+					}
+					else
+					{
+						Sleep(1);
+					}
+				}
+			}
+
+			event = (MIDIEVENT *) &(current_queue_send->buffer[current_queue_send->header.dwBytesRecorded]);
+			event->dwDeltaTime = next_sysex_delta;
+			event->dwStreamID = 0;
+			event->dwEvent = MEVT_NOP << 24;
+
+			current_queue_send->header.dwBytesRecorded += offsetof(MIDIEVENT, dwParms);
+		}
+
+		if (current_queue_send->header.dwBytesRecorded)
+		{
+			if (MMSYSERR_NOERROR == midiStreamOut(hStream, &(current_queue_send->header), sizeof(MIDIHDR)))
+			{
+				current_queue_send = current_queue_send->next;
+			}
+		}
+
+		while (current_queue_wait != current_queue_send)
+		{
+			if (current_queue_wait->header.dwFlags & MHDR_DONE)
+			{
+				current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+				current_queue_wait = current_queue_wait->next;
+			}
+			else
+			{
+				Sleep(1);
+			}
+		}
+
+		midi_queue_wait = current_queue_wait;
+		midi_queue_send = current_queue_send;
+
+		if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+		{
+			midi_playing = 0;
+		}
+	}
+
+	LeaveCriticalSection(&midi_critical_section);
 
 	return events_len;
 }
@@ -828,10 +993,13 @@ static void reset_playing(void)
 
 	for (chan = 0xb0; chan <= 0xbf; chan++)
 	{
-		midiOutShortMsg((HMIDIOUT)hStream, chan | (0x78 << 8) | (0x00 << 16)); // All sounds off (abrupt stop of sound on channel)
-		// running status
-		midiOutShortMsg((HMIDIOUT)hStream, 0x79 | (0x00 << 8)); // All controllers off (this message clears all the controller values for this channel, back to their default values)
-		midiOutShortMsg((HMIDIOUT)hStream, 0x7b | (0x00 << 8)); // All notes off (this message stops all the notes that are currently playing)
+		// MT-32 doesn't support All sounds off, so Omni off is used instead
+		midiOutShortMsg((HMIDIOUT)hStream, chan | ((midi_type ? 0x7c : 0x78) << 8) | (0x00 << 16)); // Omni off / All sounds off (abrupt stop of sound on channel)
+		midiOutShortMsg((HMIDIOUT)hStream, chan | (0x79 << 8) | (0x00 << 16)); // All controllers off (this message clears all the controller values for this channel, back to their default values)
+		midiOutShortMsg((HMIDIOUT)hStream, chan | (0x7b << 8) | (0x00 << 16)); // All notes off (this message stops all the notes that are currently playing)
+		// All controllers off doesn't set volume and pan to default values
+		// Volume is set at start of playing, so only pan is set to default value
+		midiOutShortMsg((HMIDIOUT)hStream, chan | (0x0a << 8) | (0x40 << 16)); // Pan
 
 		if (reset_controller_events != NULL)
 		{
@@ -863,23 +1031,31 @@ static void close_midi(void)
 
 	if (midi_playing)
 	{
+		midi_queue_info *current_queue_wait, *current_queue_send;
+
+		current_queue_wait = (midi_queue_info *) midi_queue_wait;
+		current_queue_send = (midi_queue_info *) midi_queue_send;
+		while (current_queue_wait != current_queue_send)
+		{
+			if (current_queue_wait->header.dwFlags & MHDR_DONE)
+			{
+				current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+				current_queue_wait = current_queue_wait->next;
+			}
+			else
+			{
+				Sleep(1);
+			}
+		}
+		midi_queue_wait = current_queue_wait;
+
 		if (MMSYSERR_NOERROR == midiStreamPause(hStream))
 		{
 			midi_playing = 0;
 		}
 	}
 
-	midiStreamStop(hStream);
-
-	while (midi_header_wait != midi_header_send)
-	{
-		midiOutUnprepareHeader((HMIDIOUT)hStream, &(midi_headers[midi_header_wait]), sizeof(MIDIHDR));
-		midi_header_wait = (midi_header_wait + 1) & 3;
-	};
-
-	free_midi_data((uint8_t *) midi_first_data);
-	midi_first_data = midi_next_data = NULL;
-	midi_header_wait = midi_header_send = 0;
+	free_midi_data((midi_event_info *)midi_events);
 	midi_loaded = 0;
 
 	LeaveCriticalSection(&midi_critical_section);
@@ -890,7 +1066,7 @@ static void close_midi(void)
 
 static void load_windows_dlls(void)
 {
-	hAvrt = LoadLibraryW(L"avrt.dll");
+	hAvrt = LoadLibraryExW(L"avrt.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 	if (hAvrt != NULL)
 	{
 		dyn_AvSetMmThreadCharacteristicsW = (AvSetMmThreadCharacteristicsWFunc)GetProcAddress(hAvrt, "AvSetMmThreadCharacteristicsW");
@@ -902,7 +1078,7 @@ static void load_windows_dlls(void)
 		}
 	}
 
-	hCfgmgr32 = LoadLibraryW(L"cfgmgr32.dll");
+	hCfgmgr32 = LoadLibraryExW(L"cfgmgr32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 	if (hCfgmgr32 != NULL)
 	{
 		dyn_CM_Register_Notification = (CM_Register_Notification_Func)GetProcAddress(hCfgmgr32, "CM_Register_Notification");
@@ -925,7 +1101,7 @@ static void get_device_interface_name(UINT uDeviceID)
 		return;
 	}
 
-	if (MMSYSERR_NOERROR != midiOutMessage((HMIDIOUT)uDeviceID, DRV_QUERYDEVICEINTERFACESIZE, (DWORD_PTR)&uSize, 0))
+	if (MMSYSERR_NOERROR != midiOutMessage((HMIDIOUT)(UINT_PTR)uDeviceID, DRV_QUERYDEVICEINTERFACESIZE, (DWORD_PTR)&uSize, 0))
 	{
 		return;
 	}
@@ -941,7 +1117,7 @@ static void get_device_interface_name(UINT uDeviceID)
 		return;
 	}
 
-	if (MMSYSERR_NOERROR != midiOutMessage((HMIDIOUT)uDeviceID, DRV_QUERYDEVICEINTERFACE, (DWORD_PTR)lpDeviceInterfaceName, uSize))
+	if (MMSYSERR_NOERROR != midiOutMessage((HMIDIOUT)(UINT_PTR)uDeviceID, DRV_QUERYDEVICEINTERFACE, (DWORD_PTR)lpDeviceInterfaceName, uSize))
 	{
 		free(lpDeviceInterfaceName);
 		lpDeviceInterfaceName = NULL;
@@ -1040,17 +1216,97 @@ static void register_notifications(void)
 	}
 }
 
+static midi_queue_info *allocate_queue_info(void)
+{
+	midi_queue_info *qinfo;
+
+	qinfo = (midi_queue_info *)malloc(sizeof(midi_queue_info));
+	if (qinfo == NULL)
+	{
+		return NULL;
+	}
+
+	qinfo->header.lpData = (LPSTR)qinfo->buffer;
+	qinfo->header.dwBufferLength = sizeof(qinfo->buffer);
+	qinfo->header.dwBytesRecorded = 0;
+	qinfo->header.dwFlags = 0;
+
+	if (MMSYSERR_NOERROR != midiOutPrepareHeader((HMIDIOUT)hStream, &qinfo->header, sizeof(MIDIHDR)))
+	{
+		free(qinfo);
+		return NULL;
+	}
+
+	return qinfo;
+}
+
+static int initialize_queue(void)
+{
+	midi_queue_info *qinfo;
+
+	qinfo = allocate_queue_info();
+	if (qinfo == NULL)
+	{
+		return 0;
+	}
+
+	qinfo->next = qinfo;
+	midi_queue_wait = midi_queue_send = qinfo;
+
+	qinfo = allocate_queue_info();
+	if (qinfo == NULL)
+	{
+		return 0;
+	}
+
+	qinfo->next = (midi_queue_info *) midi_queue_wait;
+	midi_queue_wait->next = qinfo;
+
+	qinfo = allocate_queue_info();
+	if (qinfo == NULL)
+	{
+		return 0;
+	}
+
+	qinfo->next = (midi_queue_info *) midi_queue_wait;
+	midi_queue_wait->next->next = qinfo;
+
+	return 1;
+}
+
+static void deinitialize_queue(void)
+{
+	midi_queue_info *first, *qinfo, *next;
+
+	first = (midi_queue_info *) midi_queue_wait;
+	if (first == NULL) return;
+
+	qinfo = first->next;
+	while (qinfo != first)
+	{
+		midiOutUnprepareHeader((HMIDIOUT)hStream, &qinfo->header, sizeof(MIDIHDR));
+		next = qinfo->next;
+		free(qinfo);
+		qinfo = next;
+	}
+
+	midiOutUnprepareHeader((HMIDIOUT)hStream, &first->header, sizeof(MIDIHDR));
+	free(first);
+
+	midi_queue_wait = midi_queue_send = NULL;
+}
+
 #endif
 
 
-static int play(void const *midibuffer, long int size, int loop_count)
+static int MIDI_PLUGIN2_API play(void const *midibuffer, long int size, int loop_count)
 {
     if (midibuffer == NULL) return -1;
     if (size <= 0) return -2;
 
     if (loop_count < -1) loop_count = -1;
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -3;
 
 	close_midi();
@@ -1059,16 +1315,26 @@ static int play(void const *midibuffer, long int size, int loop_count)
 
 	{
 		unsigned int timediv;
-		uint8_t *dataptr;
+		midi_event_info *dataptr;
 		MIDIPROPTEMPO miditempo;
 		MIDIPROPTIMEDIV miditimediv;
+		MMTIME mmtime;
+		int chan;
 
-		if (preprocessmidi(midibuffer, size, &timediv, &dataptr))
+		if (preprocessmidi((const uint8_t *)midibuffer, size, &timediv, &dataptr))
 		{
 			return -4;
 		}
 
 		EnterCriticalSection(&midi_critical_section);
+
+		for (chan = 0; chan < MIDI_CHANNELS; chan++)
+		{
+			channel_volume[chan] = 100;
+		}
+
+		// set current volume to a different value than new volume in order to set the channel volume at start of playing
+		midi_current_volume = midi_new_volume ^ 1;
 
 		miditimediv.cbStruct = sizeof(miditimediv);
 		miditimediv.dwTimeDiv = timediv;
@@ -1088,11 +1354,6 @@ static int play(void const *midibuffer, long int size, int loop_count)
 			return -6;
 		}
 
-		midi_first_data = midi_next_data = dataptr;
-		midi_header_wait = midi_header_send = 0;
-
-		midi_loaded = 1;
-
 		if (!midi_playing)
 		{
 			if (MMSYSERR_NOERROR == midiStreamRestart(hStream))
@@ -1101,6 +1362,35 @@ static int play(void const *midibuffer, long int size, int loop_count)
 			}
 		}
 
+		if (!midi_playing)
+		{
+			free_midi_data(dataptr);
+			LeaveCriticalSection(&midi_critical_section);
+			return -7;
+		}
+
+		mmtime.wType = TIME_MS;
+		if (MMSYSERR_NOERROR != midiStreamPosition(hStream, &mmtime, sizeof(MMTIME)))
+		{
+			if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+			{
+				midi_playing = 0;
+			}
+			free_midi_data(dataptr);
+			LeaveCriticalSection(&midi_critical_section);
+			return -8;
+		}
+
+		midi_base_time = mmtime.u.ms;
+
+		midi_events = dataptr;
+		midi_current_event = 1;
+
+		midi_loaded = 1;
+		midi_eof = 0;
+
+		memset(channel_notes, 0, 128*MIDI_CHANNELS*sizeof(int));
+
 		LeaveCriticalSection(&midi_critical_section);
 	}
 #endif
@@ -1108,19 +1398,62 @@ static int play(void const *midibuffer, long int size, int loop_count)
     return 0;
 }
 
-static int pause(void)
+static int MIDI_PLUGIN2_API pause(void)
 {
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -1;
 	if (!midi_loaded) return -2;
 
 	if (midi_playing)
 	{
-        EnterCriticalSection(&midi_critical_section);
+		midi_queue_info *current_queue_wait, *current_queue_send;
+		int chan, note, num;
 
-		if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+		EnterCriticalSection(&midi_critical_section);
+
+		current_queue_wait = (midi_queue_info *) midi_queue_wait;
+		current_queue_send = (midi_queue_info *) midi_queue_send;
+		while (current_queue_wait != current_queue_send)
 		{
-			midi_playing = 0;
+			if (current_queue_wait->header.dwFlags & MHDR_DONE)
+			{
+				current_queue_wait->header.dwFlags &= ~MHDR_DONE;
+				current_queue_wait = current_queue_wait->next;
+			}
+			else
+			{
+				Sleep(1);
+			}
+		}
+		midi_queue_wait = current_queue_wait;
+
+		if (state_mt32_display == 2 && !mt32_delay)
+		{
+			state_mt32_display = 4;
+			send_initial_sysex_events(sysex_mt32_display);
+		}
+		else
+		{
+			if (MMSYSERR_NOERROR == midiStreamPause(hStream))
+			{
+				midi_playing = 0;
+			}
+		}
+
+		if (!midi_playing)
+		{
+			// stop playing notes on all channels
+			for (chan = 0; chan < MIDI_CHANNELS; chan++)
+			{
+				for (note = 0; note < 128; note++)
+				{
+					if (channel_notes[chan][note] > 0)
+					for (num = channel_notes[chan][note]; num != 0; num--)
+					{
+						midiOutShortMsg((HMIDIOUT)hStream, 0x80 | chan | (note << 8) | (0x00 << 16)); // Note off
+					}
+				}
+			}
 		}
 
 		LeaveCriticalSection(&midi_critical_section);
@@ -1133,15 +1466,21 @@ static int pause(void)
     return 0;
 }
 
-static int resume(void)
+static int MIDI_PLUGIN2_API resume(void)
 {
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -1;
 	if (!midi_loaded) return -2;
 
 	if (!midi_playing)
 	{
-        EnterCriticalSection(&midi_critical_section);
+		EnterCriticalSection(&midi_critical_section);
+
+		if (state_mt32_display == 4)
+		{
+			state_mt32_display = 2;
+			send_initial_sysex_events(sysex_mt32_reset_display);
+		}
 
 		if (MMSYSERR_NOERROR == midiStreamRestart(hStream))
 		{
@@ -1158,9 +1497,9 @@ static int resume(void)
     return 0;
 }
 
-static int halt(void)
+static int MIDI_PLUGIN2_API halt(void)
 {
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -1;
 
 	close_midi();
@@ -1170,47 +1509,25 @@ static int halt(void)
     return 0;
 }
 
-static int set_volume(unsigned char volume) // volume = 0 - 127
+static int MIDI_PLUGIN2_API set_volume(unsigned char volume) // volume = 0 - 127
 {
     if (volume > 127) volume = 127;
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -1;
 
-	{
-		DWORD volparam;
-		int ok;
-
-		volparam = 33818125;
-		volparam = (volparam * volume) >> 16;
-		volparam |= volparam << 16;
-
-		EnterCriticalSection(&midi_critical_section);
-
-		if (MMSYSERR_NOERROR == midiOutSetVolume((HMIDIOUT)hStream, volparam))
-		{
-			ok = 1;
-		}
-		else
-		{
-			ok = 0;
-		}
-
-		LeaveCriticalSection(&midi_critical_section);
-
-		if (!ok) return -3;
-	}
+	midi_new_volume = volume;
 
 #endif
 
     return 0;
 }
 
-static int set_loop_count(int loop_count) // -1 = unlimited
+static int MIDI_PLUGIN2_API set_loop_count(int loop_count) // -1 = unlimited
 {
     if (loop_count < -1) loop_count = -1;
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 	if (hStream == NULL) return -1;
 	if (!midi_loaded) return -2;
 
@@ -1221,9 +1538,29 @@ static int set_loop_count(int loop_count) // -1 = unlimited
     return 0;
 }
 
-static void shutdown_plugin(void)
+#ifdef PLUGIN_ENABLED
+static void shutdown_plugin_common(void)
 {
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+	if (hAvrt != NULL)
+	{
+		FreeLibrary(hAvrt);
+		hAvrt = NULL;
+	}
+
+	if (hCfgmgr32 != NULL)
+	{
+		FreeLibrary(hCfgmgr32);
+		hCfgmgr32 = NULL;
+	}
+
+	DeleteCriticalSection(&notification_critical_section);
+	DeleteCriticalSection(&midi_critical_section);
+}
+#endif
+
+static void MIDI_PLUGIN2_API shutdown_plugin(void)
+{
+#ifdef PLUGIN_ENABLED
 	if (hNotificationInstance != NULL)
 	{
 		dyn_CM_Unregister_Notification(hNotificationInstance);
@@ -1257,20 +1594,21 @@ static void shutdown_plugin(void)
 		midi_quit = 0;
 	}
 
-	if (hAvrt != NULL)
-	{
-		FreeLibrary(hAvrt);
-		hAvrt = NULL;
-	}
-
-	if (hCfgmgr32 != NULL)
-	{
-		FreeLibrary(hCfgmgr32);
-		hCfgmgr32 = NULL;
-	}
-
 	if (hStream != NULL)
 	{
+		if (midi_type == 2)
+		{
+			mt32_shutdown_gm();
+		}
+		else if (midi_type)
+		{
+			if (state_mt32_display >= 4)
+			{
+				state_mt32_display = 2;
+				send_initial_sysex_events(sysex_mt32_reset_display);
+			}
+		}
+		deinitialize_queue();
 		midiStreamClose(hStream);
 		hStream = NULL;
 	}
@@ -1287,57 +1625,32 @@ static void shutdown_plugin(void)
 		midi_stream_name = NULL;
 	}
 
+	if (reset_controller_events != NULL)
+	{
+		free(reset_controller_events);
+		reset_controller_events = NULL;
+	}
+
 	if (initial_sysex_events != NULL)
 	{
 		free(initial_sysex_events);
 		initial_sysex_events = NULL;
 	}
 
-	DeleteCriticalSection(&notification_critical_section);
-	DeleteCriticalSection(&midi_critical_section);
+	shutdown_plugin_common();
 #endif
-
-    if (reset_controller_events != NULL)
-    {
-        free(reset_controller_events);
-        reset_controller_events = NULL;
-    }
 }
 
 
-__attribute__ ((visibility ("default")))
-int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plugin2_functions *functions)
+#ifdef __cplusplus
+extern "C"
+#endif
+EXPORT
+int MIDI_PLUGIN2_API initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plugin2_functions *functions)
 {
-    char const *device_name;
-    unsigned char const *sysex_events, *controller_events;
-    int events_len;
-
     if (functions == NULL) return -3;
 
-    device_name = NULL;
-    sysex_events = NULL;
-    controller_events = NULL;
-    if (parameters != NULL)
-    {
-        device_name = parameters->midi_device_name;
-        sysex_events = parameters->initial_sysex_events;
-        controller_events = parameters->reset_controller_events;
-    }
-
-    if (controller_events != NULL && *controller_events == 0xb0)
-    {
-        events_len = 1;
-        while (controller_events[events_len] != 0xff) events_len++;
-
-        if (events_len > 1)
-        {
-            reset_controller_events = (unsigned char *)malloc(events_len);
-            if (reset_controller_events != NULL)
-            {
-                memcpy(reset_controller_events, controller_events + 1, events_len);
-            }
-        }
-    }
+    midi_type = (parameters != NULL) ? parameters->midi_type : 0;
 
     functions->play = &play;
     functions->pause = &pause;
@@ -1347,16 +1660,39 @@ int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plug
     functions->set_loop_count = &set_loop_count;
     functions->shutdown_plugin = &shutdown_plugin;
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#ifdef PLUGIN_ENABLED
 {
-	int numDevices, devid;
+	char const *device_name;
+	unsigned char const *sysex_events, *controller_events;
+	int events_len;
+	UINT numDevices, devid;
 	MIDIOUTCAPS midicaps;
 	UINT uDeviceID;
+
+	device_name = NULL;
+	sysex_events = NULL;
+	controller_events = NULL;
+	mt32_delay = 0;
+	if (parameters != NULL)
+	{
+		device_name = parameters->midi_device_name;
+		if (midi_type != 2) sysex_events = parameters->initial_sysex_events;
+		if (midi_type != 2) controller_events = parameters->reset_controller_events;
+		if (midi_type) mt32_delay = parameters->mt32_delay;
+		prepare_mt32_display_sysex(parameters->mt32_display_text);
+	}
 
 	InitializeCriticalSection(&midi_critical_section);
 	InitializeCriticalSection(&notification_critical_section);
 
 	load_windows_dlls();
+
+#ifdef _WIN64
+	if (0 == midi2_initialize_midi_plugin2(parameters, functions)) return 0;
+
+	dyn_add_midi_event = add_midi_event;
+	dyn_send_initial_sysex_events = send_initial_sysex_events;
+#endif
 
 	numDevices = midiOutGetNumDevs();
 	if (numDevices == 0)
@@ -1372,7 +1708,7 @@ int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plug
 	else
 	{
 		uDeviceID = numDevices;
-		for (devid = -1; devid < numDevices; devid++)
+		for (devid = 0; devid < numDevices; devid++)
 		{
 			if (MMSYSERR_NOERROR != midiOutGetDevCaps(devid, &midicaps, sizeof(midicaps))) continue;
 
@@ -1386,12 +1722,24 @@ int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plug
 
 		if (uDeviceID == numDevices)
 		{
+			if (MMSYSERR_NOERROR == midiOutGetDevCaps(MIDI_MAPPER, &midicaps, sizeof(midicaps)))
+			{
+				if (0 == strcmp(device_name, midicaps.szPname))
+				{
+					uDeviceID = MIDI_MAPPER;
+					midi_stream_name = strdup(midicaps.szPname);
+				}
+			}
+		}
+
+		if (uDeviceID == numDevices)
+		{
 			long device_num;
 			char *endptr;
 
 			errno = 0;
 			device_num = strtol(device_name, &endptr, 10);
-			if ((errno == 0) && (*endptr == 0) && (device_num >= 0) && (device_num < numDevices))
+			if ((errno == 0) && (*endptr == 0) && (device_num >= 0) && ((unsigned long)device_num < numDevices))
 			{
 				if (MMSYSERR_NOERROR == midiOutGetDevCaps(device_num, &midicaps, sizeof(midicaps)))
 				{
@@ -1429,6 +1777,28 @@ int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plug
 	get_device_interface_name(uDeviceID);
 	register_notifications();
 
+	if (!initialize_queue())
+	{
+		deinitialize_queue();
+		midiStreamClose(hStream);
+		hStream = NULL;
+		shutdown_plugin();
+		return -7;
+	}
+
+	if (midi_type == 2)
+	{
+		mt32_initialize_gm();
+	}
+	else if (midi_type)
+	{
+		if (state_mt32_display == 1)
+		{
+			state_mt32_display = (mt32_delay) ? 4 : 5;
+			send_initial_sysex_events(sysex_mt32_display);
+		}
+	}
+
 	if (sysex_events != NULL && *sysex_events == 0xf0)
 	{
 		events_len = send_initial_sysex_events(sysex_events);
@@ -1443,16 +1813,35 @@ int initialize_midi_plugin2(midi_plugin2_parameters const *parameters, midi_plug
 		}
 	}
 
+	if (controller_events != NULL && *controller_events == 0xb0)
+	{
+		events_len = 1;
+		while (controller_events[events_len] != 0xff) events_len++;
+
+		if (events_len > 1)
+		{
+			reset_controller_events = (unsigned char *)malloc(events_len);
+			if (reset_controller_events != NULL)
+			{
+				memcpy(reset_controller_events, controller_events + 1, events_len);
+			}
+		}
+	}
+
 	reset_playing();
 
-	midi_thread_handle = CreateThread(NULL, 4096, &MidiThreadProc, NULL, 0, NULL);
+	midi_thread_handle = CreateThread(NULL, 65536, &MidiThreadProc, NULL, 0, NULL);
 	if (midi_thread_handle == NULL)
 	{
+		if (midi_type == 2)
+		{
+			mt32_shutdown_gm();
+		}
+		deinitialize_queue();
 		midiStreamClose(hStream);
 		hStream = NULL;
 		shutdown_plugin();
-
-		return -7;
+		return -8;
 	}
 }
 #endif

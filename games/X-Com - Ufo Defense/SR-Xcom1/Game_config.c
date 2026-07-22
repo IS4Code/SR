@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -34,7 +34,7 @@
 
 static char *trim_string(char *buf)
 {
-    int len;
+    size_t len;
 
     while (*buf == ' ') buf++;
 
@@ -226,6 +226,10 @@ void Game_ReadConfig(void)
                 {
                     Game_MidiSubsystem = 22;
                 }
+                else if ( strcasecmp(param, "coremidi") == 0 ) // param equals "coremidi"
+                {
+                    Game_MidiSubsystem = 23;
+                }
                 else if ( strcasecmp(param, "sdl_mixer") == 0 ) // param equals "sdl_mixer"
                 {
                     Game_MidiSubsystem = 0;
@@ -238,6 +242,10 @@ void Game_ReadConfig(void)
                 {
                     Game_MidiSubsystem = 11;
                 }
+                else if ( strcasecmp(param, "awe32-emu8k") == 0 ) // param equals "awe32-emu8k"
+                {
+                    Game_MidiSubsystem = 12;
+                }
                 else if ( strcasecmp(param, "mt32-nativewindows") == 0 ) // param equals "mt32-nativewindows"
                 {
                     Game_MidiSubsystem = 31;
@@ -245,6 +253,10 @@ void Game_ReadConfig(void)
                 else if ( strcasecmp(param, "mt32-alsa") == 0 ) // param equals "mt32-alsa"
                 {
                     Game_MidiSubsystem = 32;
+                }
+                else if ( strcasecmp(param, "mt32-coremidi") == 0 ) // param equals "mt32-coremidi"
+                {
+                    Game_MidiSubsystem = 33;
                 }
             }
             else if ( strcasecmp(str, "SoundFont_Path") == 0 ) // str equals "SoundFont_Path"
@@ -263,6 +275,15 @@ void Game_ReadConfig(void)
                 if (*param != 0)
                 {
                     Game_MT32RomsPath = strdup(param);
+                }
+            }
+            else if ( strcasecmp(str, "AWE32_Rom_Path") == 0 ) // str equals "AWE32_Rom_Path"
+            {
+                // path to AWE32 rom
+
+                if (*param != 0)
+                {
+                    Game_AWE32RomPath = strdup(param);
                 }
             }
             else if ( strcasecmp(str, "MIDI_Device") == 0 ) // str equals "MIDI_Device"
@@ -296,6 +317,19 @@ void Game_ReadConfig(void)
                 else if ( strcasecmp(param, "precise") == 0 ) // param equals "precise"
                 {
                     Game_OPL3Emulator = 1;
+                }
+            }
+            else if ( strcasecmp(str, "MT32_Delay_Sysex") == 0 ) // str equals "MT32_Delay_Sysex"
+            {
+                // add delays when sending sysex messages on MT-32
+
+                if ( strcasecmp(param, "yes") == 0 ) // param equals "yes"
+                {
+                    Game_MT32DelaySysex = 1;
+                }
+                else if ( strcasecmp(param, "no") == 0 ) // param equals "no"
+                {
+                    Game_MT32DelaySysex = 0;
                 }
             }
 

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2024 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -27,7 +27,9 @@
 
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#ifdef DEBUG_QTML
 #include <inttypes.h>
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +39,7 @@
 #include <sys/stat.h>
 #include "QTML.h"
 #include "Game-Config.h"
+#include "Game-Memory.h"
 
 #if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
 #define _WIN32
@@ -52,14 +55,14 @@
 
 
 #pragma pack(1)
-typedef struct __attribute__ ((__packed__)) Rect {
+typedef struct PACKED Rect {
     int16_t                         top;
     int16_t                         left;
     int16_t                         bottom;
     int16_t                         right;
 } Rect;
 
-typedef struct __attribute__ ((__packed__)) EventRecord {
+typedef struct PACKED EventRecord {
     uint16_t                        what;
     uint32_t                        message;
     uint32_t                        when;
@@ -87,23 +90,12 @@ typedef struct NativeEvent {
 typedef struct MovieRecord {
     quicktime_t *qt;
     uint8_t** frame;
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_Renderer *Renderer;
     SDL_Texture *Video;
-#else
-    SDL_Surface *Screen;
-    SDL_Surface *Video;
-    SDL_Surface *Video2;
-    SDL_Overlay *Overlay;
-#endif
     int video_width;
     int video_height;
     int colormodel;
-#if SDL_VERSION_ATLEAST(2,0,0)
     unsigned int format;
-#else
-    SDL_Rect srcrect;
-#endif
     SDL_Rect dstrect;
     int rowspan_y;
     int rowspan_uv;
@@ -120,23 +112,14 @@ typedef struct MovieRecord {
     int audio_channels;
     long audio_sample_rate;
     int decode_raw_audio;
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_AudioDeviceID device_id;
     SDL_AudioFormat audio_format;
-#else
-    int audio_format;
-#endif
     int audio_format_size;
     int audio_eof;
     uint8_t silence;
     int64_t audio_length;
     uint8_t *audio_buffer;
-#if SDL_VERSION_ATLEAST(2,0,0)
-    #define MAX_CHANNELS 6
-#else
-    #define MAX_CHANNELS 2
-#endif
-    int16_t *audio_temp_buffer[MAX_CHANNELS];
+    int16_t *audio_temp_buffer[6];
     int audio_buffer_size;
     //int audio_temp_buffer_size;
     int audio_temp_buffer_samples;
@@ -156,23 +139,14 @@ extern "C" {
 #endif
 extern void disable_virtual_keyboard(int disable);
 
-extern int display_virtual_keyboard(
-#if SDL_VERSION_ATLEAST(2,0,0)
-    SDL_Renderer *renderer
-#else
-    SDL_Surface *surface, SDL_Rect *update_area
-#endif
-);
+extern int display_virtual_keyboard(SDL_Renderer *renderer);
 
-#if SDL_VERSION_ATLEAST(2,0,0)
 extern SDL_Renderer *GetSurfaceRenderer(void *);
-#endif
 #ifdef __cplusplus
 }
 #endif
 
 
-#if SDL_VERSION_ATLEAST(2,0,0)
 static void CopyFrameToTexture(Movie movie)
 {
     uint8_t *dst, *src;
@@ -203,70 +177,6 @@ static void CopyFrameToTexture(Movie movie)
         SDL_UnlockTexture(movie->Video);
     }
 }
-#else
-static void CopyYUV(uint8_t **frame, SDL_Overlay *Overlay)
-{
-    int plane;
-
-    if (0 == SDL_LockYUVOverlay(Overlay))
-    {
-        for (plane = 0; plane < Overlay->planes; plane++)
-        {
-            memcpy(Overlay->pixels[plane], frame[plane], Overlay->h * Overlay->pitches[plane]);
-        }
-
-        SDL_UnlockYUVOverlay(Overlay);
-    }
-}
-
-static void ScaleFrame(SDL_Surface *Video, SDL_Surface *Video2)
-{
-    int height, width, bpp;
-    uint8_t *srcline, *dstline;
-
-    SDL_LockSurface(Video2);
-
-    srcline = (uint8_t *) Video->pixels;
-    dstline = (uint8_t *) Video2->pixels;
-    bpp = Video->format->BitsPerPixel;
-    for (height = Video->h; height != 0; height--)
-    {
-        if (bpp == 32)
-        {
-            uint32_t *src, *dst, *dst2;
-            src = (uint32_t *)srcline;
-            dst = (uint32_t *)dstline;
-            dst2 = (uint32_t *)(dstline + Video2->pitch);
-            for (width = Video->w; width != 0; width--)
-            {
-                dst[0] = dst[1] = dst2[0] = dst2[1] = src[0];
-                src++;
-                dst += 2;
-                dst2 += 2;
-            }
-        }
-        else if (bpp == 16)
-        {
-            uint16_t *src, *dst, *dst2;
-            src = (uint16_t *)srcline;
-            dst = (uint16_t *)dstline;
-            dst2 = (uint16_t *)(dstline + Video2->pitch);
-            for (width = Video->w; width != 0; width--)
-            {
-                dst[0] = dst[1] = dst2[0] = dst2[1] = src[0];
-                src++;
-                dst += 2;
-                dst2 += 2;
-            }
-        }
-
-        srcline += Video->pitch;
-        dstline += 2 * Video2->pitch;
-    }
-
-    SDL_UnlockSurface(Video2);
-}
-#endif
 
 static int decode_more_audio(Movie movie)
 {
@@ -314,7 +224,7 @@ static int decode_more_audio(Movie movie)
 
     if (samples_available >= movie->audio_length - last_position)
     {
-        samples_available = movie->audio_length - last_position;
+        samples_available = (int)(movie->audio_length - last_position);
         movie->audio_eof = 1;
     }
 
@@ -395,9 +305,6 @@ static void *movie_thread(void *arg)
     int video_time_scale, phase, playing, diff_time;
     int64_t video_duration, next_frame_time;
     unsigned int next_frame, first_frame;
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    SDL_Rect dstrect;
-#endif
     SDL_Event event;
 
     movie = (Movie)arg;
@@ -423,43 +330,16 @@ static void *movie_thread(void *arg)
         decode_more_audio(movie);
         decode_more_audio(movie);
 
-#if SDL_VERSION_ATLEAST(2,0,0)
         movie->updated = 0;
         movie->flipped = 0;
 
         // push event to render texture
         event.user.code = 2;
         SDL_PushEvent(&event);
-#else
-        if (movie->Overlay != NULL)
-        {
-            SDL_FillRect(movie->Screen, NULL, 0);
-            SDL_Flip(movie->Screen);
-
-            CopyYUV(movie->frame, movie->Overlay);
-        }
-        else
-        {
-            dstrect = movie->dstrect;
-            if (movie->Video2 != NULL)
-            {
-                ScaleFrame(movie->Video, movie->Video2);
-                SDL_BlitSurface(movie->Video2, &(movie->srcrect), movie->Screen, &dstrect);
-            }
-            else
-            {
-                SDL_BlitSurface(movie->Video, &(movie->srcrect), movie->Screen, &dstrect);
-            }
-        }
-#endif
 
         if (movie->play_audio)
         {
-#if SDL_VERSION_ATLEAST(2,0,0)
             SDL_PauseAudioDevice(movie->device_id, 0);
-#else
-            SDL_PauseAudio(0);
-#endif
         }
     }
 
@@ -478,7 +358,6 @@ static void *movie_thread(void *arg)
                 break;
             }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
             if (!movie->updated)
             {
                 if (!decode_more_audio(movie))
@@ -491,9 +370,6 @@ static void *movie_thread(void *arg)
                 movie->updated = 0;
                 phase++;
             }
-#else
-            phase++;
-#endif
             break;
         case 1: // decode
             decode_more_audio(movie);
@@ -516,31 +392,6 @@ static void *movie_thread(void *arg)
             {
                 phase++;
 
-#if !SDL_VERSION_ATLEAST(2,0,0)
-                if (movie->Overlay != NULL)
-                {
-                    CopyYUV(movie->frame, movie->Overlay);
-                }
-                else
-                {
-                    dstrect = movie->dstrect;
-
-                    if ((dstrect.x != 0) || (dstrect.y != 0) || (movie->srcrect.w < movie->Screen->w) || (movie->srcrect.h < movie->Screen->h))
-                    {
-                        SDL_FillRect(movie->Screen, NULL, 0);
-                    }
-
-                    if (movie->Video2 != NULL)
-                    {
-                        ScaleFrame(movie->Video, movie->Video2);
-                        SDL_BlitSurface(movie->Video2, &(movie->srcrect), movie->Screen, &dstrect);
-                    }
-                    else
-                    {
-                        SDL_BlitSurface(movie->Video, &(movie->srcrect), movie->Screen, &dstrect);
-                    }
-                }
-#endif
             }
             break;
         case 2: // wait for flip
@@ -550,7 +401,6 @@ static void *movie_thread(void *arg)
                 break;
             }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
             if (!movie->flipped)
             {
                 if (!decode_more_audio(movie))
@@ -567,9 +417,6 @@ static void *movie_thread(void *arg)
                 event.user.code = 2;
                 SDL_PushEvent(&event);
             }
-#else
-            phase++;
-#endif
             break;
         case 3: // wait for next frame time
             if (movie->stop_playback)
@@ -592,20 +439,9 @@ static void *movie_thread(void *arg)
             }
             break;
         case 4: // display
-#if SDL_VERSION_ATLEAST(2,0,0)
             // push event to flip buffers
             event.user.code = 3;
             SDL_PushEvent(&event);
-#else
-            if (movie->Overlay != NULL)
-            {
-                SDL_DisplayYUVOverlay(movie->Overlay, &(movie->dstrect));
-            }
-            else
-            {
-                SDL_Flip(movie->Screen);
-            }
-#endif
             phase = 0;
             break;
         }
@@ -694,7 +530,7 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
 
 //EXTERN_API( OSErr )
 //InitializeQTML                  (long                   flag);
-int16_t InitializeQTML_c (int32_t flag)
+int16_t CCALL InitializeQTML_c (int32_t flag)
 {
 #ifdef DEBUG_QTML
     eprintf("InitializeQTML: 0x%x - ", flag);
@@ -710,7 +546,7 @@ int16_t InitializeQTML_c (int32_t flag)
 
 //EXTERN_API( void )
 //TerminateQTML                   (void);
-void TerminateQTML_c (void)
+void CCALL TerminateQTML_c (void)
 {
 #ifdef DEBUG_QTML
     eprintf("TerminateQTML\n");
@@ -723,7 +559,7 @@ void TerminateQTML_c (void)
 //CreatePortAssociation           (void *                 theWnd,
 //                                 Ptr                    storage,
 //                                 long                   flags);
-void *CreatePortAssociation_c (void *theWnd, void *storage, int32_t flags)
+void * CCALL CreatePortAssociation_c (void *theWnd, void *storage, int32_t flags)
 {
 #ifdef DEBUG_QTML
     eprintf("CreatePortAssociation: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x - ", (uintptr_t)theWnd, (uintptr_t)storage, flags);
@@ -737,7 +573,7 @@ void *CreatePortAssociation_c (void *theWnd, void *storage, int32_t flags)
 
 //EXTERN_API( void )
 //DestroyPortAssociation          (CGrafPtr               cgp);
-void DestroyPortAssociation_c (void *cgp)
+void CCALL DestroyPortAssociation_c (void *cgp)
 {
 #ifdef DEBUG_QTML
     eprintf("DestroyPortAssociation: 0x%" PRIxPTR "\n", (uintptr_t)cgp);
@@ -749,7 +585,7 @@ void DestroyPortAssociation_c (void *cgp)
 //EXTERN_API( void )
 //SetGWorld                       (CGrafPtr               port,
 //                                 GDHandle               gdh)                                FOURWORDINLINE(0x203C, 0x0008, 0x0006, 0xAB1D);
-void SetGWorld_c (void *port, void *gdh)
+void CCALL SetGWorld_c (void *port, void *gdh)
 {
 #ifdef DEBUG_QTML
     eprintf("SetGWorld: 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)port, (uintptr_t)gdh);
@@ -759,7 +595,7 @@ void SetGWorld_c (void *port, void *gdh)
 
 //EXTERN_API_C( StringPtr )
 //c2pstr                          (char *                 aStr);
-uint8_t *c2pstr_c (char *aStr)
+uint8_t * CCALL c2pstr_c (char *aStr)
 {
 #ifdef DEBUG_QTML
     eprintf("c2pstr: 0x%" PRIxPTR " (%s)- ", (uintptr_t)aStr, aStr);
@@ -776,7 +612,7 @@ uint8_t *c2pstr_c (char *aStr)
 //PtrToHand                       (const void *           srcPtr,
 //                                 Handle *               dstHndl,
 //                                 long                   size);
-int16_t PtrToHand_c (const void *srcPtr, PTR32(void *)*dstHndl, int32_t size)
+int16_t CCALL PtrToHand_c (const void *srcPtr, PTR32(void *)*dstHndl, int32_t size)
 {
 #ifdef DEBUG_QTML
     char *str;
@@ -802,7 +638,7 @@ int16_t PtrToHand_c (const void *srcPtr, PTR32(void *)*dstHndl, int32_t size)
 //                                 long                   dirID,
 //                                 ConstStr255Param       fileName,
 //                                 FSSpec *               spec)                               TWOWORDINLINE(0x7001, 0xAA52);
-int16_t FSMakeFSSpec_c (int16_t vRefNum, int32_t dirID, char *fileName, void *spec)
+int16_t CCALL FSMakeFSSpec_c (int16_t vRefNum, int32_t dirID, char *fileName, void *spec)
 {
 #ifdef DEBUG_QTML
     eprintf("FSMakeFSSpec: %i, %i, 0x%" PRIxPTR " (%s), 0x%" PRIxPTR " - ", vRefNum, dirID, (uintptr_t)fileName, fileName, (uintptr_t)spec);
@@ -822,7 +658,7 @@ int16_t FSMakeFSSpec_c (int16_t vRefNum, int32_t dirID, char *fileName, void *sp
 //EXTERN_API( OSErr )
 //QTSetDDPrimarySurface           (void *                 lpNewDDSurface,
 //                                 unsigned long          flags);
-int16_t QTSetDDPrimarySurface_c (void *lpNewDDSurface, uint32_t flags)
+int16_t CCALL QTSetDDPrimarySurface_c (void *lpNewDDSurface, uint32_t flags)
 {
 #ifdef DEBUG_QTML
     eprintf("QTSetDDPrimarySurface: 0x%" PRIxPTR ", 0x%x - ", (uintptr_t)lpNewDDSurface, flags);
@@ -839,7 +675,7 @@ int16_t QTSetDDPrimarySurface_c (void *lpNewDDSurface, uint32_t flags)
 //EXTERN_API( long )
 //NativeEventToMacEvent           (void *                 nativeEvent,
 //                                 EventRecord *          macEvent);
-int32_t NativeEventToMacEvent_c (void *nativeEvent, void *macEvent)
+int32_t CCALL NativeEventToMacEvent_c (void *nativeEvent, void *macEvent)
 {
 #ifdef DEBUG_QTML
     eprintf("NativeEventToMacEvent: 0x%" PRIxPTR ", 0x%" PRIxPTR " - ", (uintptr_t)nativeEvent, (uintptr_t)macEvent);
@@ -860,7 +696,7 @@ int32_t NativeEventToMacEvent_c (void *nativeEvent, void *macEvent)
 
 //EXTERN_API( OSErr )
 //EnterMovies                     (void)                                                      TWOWORDINLINE(0x7001, 0xAAAA);
-int16_t EnterMovies_c (void)
+int16_t CCALL EnterMovies_c (void)
 {
 #ifdef DEBUG_QTML
     eprintf("EnterMovies - ");
@@ -874,7 +710,7 @@ int16_t EnterMovies_c (void)
 
 //EXTERN_API( void )
 //ExitMovies                      (void)                                                      TWOWORDINLINE(0x7002, 0xAAAA);
-void ExitMovies_c (void)
+void CCALL ExitMovies_c (void)
 {
 #ifdef DEBUG_QTML
     eprintf("ExitMovies\n");
@@ -884,7 +720,7 @@ void ExitMovies_c (void)
 
 //EXTERN_API( void )
 //StartMovie                      (Movie                  theMovie)                           TWOWORDINLINE(0x700B, 0xAAAA);
-void StartMovie_c (void *theMovie)
+void CCALL StartMovie_c (void *theMovie)
 {
     Movie movie;
 #ifndef _WIN32
@@ -905,7 +741,7 @@ void StartMovie_c (void *theMovie)
 
 #ifdef _WIN32
     movie->is_playing = 1;
-    if ((intptr_t)-1 == _beginthread(&movie_thread, 0, movie))
+    if ((intptr_t)-1 == (intptr_t)_beginthread(&movie_thread, 0, movie))
     {
         movie->is_playing = 0;
     }
@@ -935,7 +771,7 @@ void StartMovie_c (void *theMovie)
 
 //EXTERN_API( void )
 //StopMovie                       (Movie                  theMovie)                           TWOWORDINLINE(0x700C, 0xAAAA);
-void StopMovie_c (void *theMovie)
+void CCALL StopMovie_c (void *theMovie)
 {
     Movie movie;
 
@@ -948,15 +784,9 @@ void StopMovie_c (void *theMovie)
     movie = (Movie)theMovie;
     if (movie->play_audio)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_LockAudioDevice(movie->device_id);
         SDL_PauseAudioDevice(movie->device_id, 1);
         SDL_UnlockAudioDevice(movie->device_id);
-#else
-        SDL_LockAudio();
-        SDL_PauseAudio(1);
-        SDL_UnlockAudio();
-#endif
     }
 
     if (movie->is_playing)
@@ -974,7 +804,7 @@ void StopMovie_c (void *theMovie)
 
 //EXTERN_API( Boolean )
 //IsMovieDone                     (Movie                  theMovie)                           THREEWORDINLINE(0x303C, 0x00DD, 0xAAAA);
-uint8_t IsMovieDone_c (void *theMovie)
+uint8_t CCALL IsMovieDone_c (void *theMovie)
 {
 #ifdef DEBUG_QTML
     eprintf("IsMovieDone: 0x%" PRIxPTR " - ", (uintptr_t)theMovie);
@@ -1000,7 +830,7 @@ uint8_t IsMovieDone_c (void *theMovie)
 
 //EXTERN_API( void )
 //DisposeMovie                    (Movie                  theMovie)                           TWOWORDINLINE(0x7023, 0xAAAA);
-void DisposeMovie_c (void *theMovie)
+void CCALL DisposeMovie_c (void *theMovie)
 {
 #ifdef DEBUG_QTML
     eprintf("DisposeMovie: 0x%" PRIxPTR "\n", (uintptr_t)theMovie);
@@ -1009,14 +839,14 @@ void DisposeMovie_c (void *theMovie)
     if (theMovie == NULL) return;
 
     quicktime_close(((Movie)theMovie)->qt);
-    free(theMovie);
+    x86_free(theMovie);
 }
 
 //EXTERN_API( OSErr )
 //OpenMovieFile                   (const FSSpec *         fileSpec,
 //                                 short *                resRefNum,
 //                                 SInt8                  permission)                         THREEWORDINLINE(0x303C, 0x0192, 0xAAAA);
-int16_t OpenMovieFile_c (const void *fileSpec, int16_t *resRefNum, int8_t permission)
+int16_t CCALL OpenMovieFile_c (const void *fileSpec, int16_t *resRefNum, int8_t permission)
 {
     int RefNum, found, pathlen;
     struct stat statbuf;
@@ -1095,7 +925,7 @@ int16_t OpenMovieFile_c (const void *fileSpec, int16_t *resRefNum, int8_t permis
     if (!found)
     {
         // check for file with .avi extension
-        pathlen = strlen(((FSSpec *)fileSpec)->name);
+        pathlen = (int)strlen(((FSSpec *)fileSpec)->name);
         avipath = (char *) malloc(pathlen + 2);
         if (avipath != NULL)
         {
@@ -1172,7 +1002,7 @@ int16_t OpenMovieFile_c (const void *fileSpec, int16_t *resRefNum, int8_t permis
 
 //EXTERN_API( OSErr )
 //CloseMovieFile                  (short                  resRefNum)                          THREEWORDINLINE(0x303C, 0x00D5, 0xAAAA);
-int16_t CloseMovieFile_c (int16_t resRefNum)
+int16_t CCALL CloseMovieFile_c (int16_t resRefNum)
 {
 #ifdef DEBUG_QTML
     eprintf("CloseMovieFile: %i - ", resRefNum);
@@ -1206,10 +1036,10 @@ int16_t CloseMovieFile_c (int16_t resRefNum)
 //                                 StringPtr              resName,
 //                                 short                  newMovieFlags,
 //                                 Boolean *              dataRefWasChanged)                  THREEWORDINLINE(0x303C, 0x00F0, 0xAAAA);
-int16_t NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *resId, uint8_t *resName, int16_t newMovieFlags, uint8_t *dataRefWasChanged)
+int16_t CCALL NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *resId, uint8_t *resName, int16_t newMovieFlags, uint8_t *dataRefWasChanged)
 {
     Movie movie;
-    int color_models[5], model_index, use_yuv;
+    int color_models[5], model_index;
 
 #ifdef DEBUG_QTML
     eprintf("NewMovieFromFile: 0x%" PRIxPTR ", %i, 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x, 0x%" PRIxPTR " - ", (uintptr_t)theMovie, resRefNum, (uintptr_t)resId, (uintptr_t)resName, newMovieFlags, (uintptr_t)dataRefWasChanged);
@@ -1223,7 +1053,7 @@ int16_t NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *re
         return 1;
     }
 
-    movie = (Movie) malloc(sizeof(MovieRecord));
+    movie = (Movie) x86_malloc(sizeof(MovieRecord));
     if (movie == NULL)
     {
 #ifdef DEBUG_QTML
@@ -1236,58 +1066,25 @@ int16_t NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *re
 
     movie->frame = NULL;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     movie->Renderer = NULL;
     movie->Video = NULL;
-#else
-    movie->Screen = SDL_GetVideoSurface();
-    movie->Video = NULL;
-    movie->Video2 = NULL;
-    movie->Overlay = NULL;
-#endif
 
 
     movie->video_width = quicktime_video_width(movie->qt, 0);
     movie->video_height = quicktime_video_height(movie->qt, 0);
 
     model_index = 0;
-    use_yuv = 1;
 
-#if defined(PANDORA) && !SDL_VERSION_ATLEAST(2,0,0)
-    {
-        char namebuf[8];
-        if (NULL != SDL_VideoDriverName(namebuf, 8))
-        {
-            if (0 == strcmp(namebuf, "omapdss"))
-            {
-                // on Pandora, when using omapdss, the yuv overlays don't work
-                use_yuv = 0;
-            }
-        }
-    }
-#endif
+    color_models[model_index++] = BC_YUV422; // SDL_YUY2_OVERLAY / SDL_PIXELFORMAT_YUY2 - packed mode
+    color_models[model_index++] = BC_YUV420P; // SDL_IYUV_OVERLAY / SDL_PIXELFORMAT_IYUV - planar mode
 
-    if (use_yuv)
-    {
-        color_models[model_index++] = BC_YUV422; // SDL_YUY2_OVERLAY / SDL_PIXELFORMAT_YUY2 - packed mode
-        color_models[model_index++] = BC_YUV420P; // SDL_IYUV_OVERLAY / SDL_PIXELFORMAT_IYUV - planar mode
-    }
-
-#if SDL_VERSION_ATLEAST(2,0,0)
     color_models[model_index++] = BC_RGB565;
-#else
-    if (movie->Screen->format->BitsPerPixel == 16)
-    {
-        color_models[model_index++] = (movie->Screen->format->Rshift)?BC_RGB565:BC_BGR565;
-    }
-#endif
 
     color_models[model_index++] = BC_BGR8888;
     color_models[model_index++] = LQT_COLORMODEL_NONE;
 
     movie->colormodel = lqt_get_best_colormodel(movie->qt, 0, color_models);
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     switch(movie->colormodel)
     {
     case BC_YUV422:
@@ -1310,7 +1107,6 @@ int16_t NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *re
         movie->format = SDL_PIXELFORMAT_UNKNOWN;
         break;
     }
-#endif
 
     qthandle[resRefNum - 1] = (quicktime_t *)(intptr_t)-1;
 
@@ -1326,7 +1122,7 @@ int16_t NewMovieFromFile_c (PTR32(void)*theMovie, int16_t resRefNum, int16_t *re
 //EXTERN_API( void )
 //GetMovieBox                     (Movie                  theMovie,
 //                                 Rect *                 boxRect)                            THREEWORDINLINE(0x303C, 0x00F9, 0xAAAA);
-void GetMovieBox_c (void *theMovie, void *boxRect)
+void CCALL GetMovieBox_c (void *theMovie, void *boxRect)
 {
 #ifdef DEBUG_QTML
     eprintf("GetMovieBox: 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)theMovie, (uintptr_t)boxRect);
@@ -1356,17 +1152,9 @@ static void check_movie_audio(Movie movie)
     movie->audio_sample_rate = quicktime_sample_rate(movie->qt, 0);
 
     if (movie->audio_sample_rate > 384000) return;
-#if SDL_VERSION_ATLEAST(2,0,0)
     if ((movie->audio_channels < 1) ||
         (movie->audio_channels > 8)
        ) return;
-#else
-    if ((movie->audio_channels != 1) &&
-        (movie->audio_channels != 2) &&
-        (movie->audio_channels != 4) &&
-        (movie->audio_channels != 6)
-       ) return;
-#endif
 
     switch (lqt_get_sample_format(movie->qt, 0))
     {
@@ -1385,7 +1173,6 @@ static void check_movie_audio(Movie movie)
             movie->audio_format = AUDIO_S16SYS;
             movie->audio_format_size = 2;
             break;
-#if SDL_VERSION_ATLEAST(2,0,0)
         case LQT_SAMPLE_INT32:
             movie->decode_raw_audio = 1;
             movie->audio_format = AUDIO_S32SYS;
@@ -1396,10 +1183,6 @@ static void check_movie_audio(Movie movie)
             movie->audio_format = AUDIO_F32SYS;
             movie->audio_format_size = sizeof(float);
             break;
-#else
-        case LQT_SAMPLE_INT32:
-        case LQT_SAMPLE_FLOAT:
-#endif
         case LQT_SAMPLE_DOUBLE:
             movie->decode_raw_audio = 0;
             movie->audio_format = AUDIO_S16SYS;
@@ -1428,7 +1211,7 @@ static void check_movie_audio(Movie movie)
 //NewMovieController              (Movie                  theMovie,
 //                                 const Rect *           movieRect,
 //                                 long                   someFlags)                          THREEWORDINLINE(0x303C, 0x018A, 0xAAAA);
-void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someFlags)
+void * CCALL NewMovieController_c (void *theMovie, const void *movieRect, int32_t someFlags)
 {
     Movie movie;
     const Rect *rect;
@@ -1460,7 +1243,6 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
         movie->dstrect.h = movie->video_height;
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     movie->frame = lqt_rows_alloc(movie->video_width, movie->video_height, movie->colormodel, &(movie->rowspan_y), &(movie->rowspan_uv));
 
     if (movie->frame == NULL)
@@ -1484,94 +1266,6 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
         return NULL;
     }
 
-
-#else
-    movie->srcrect.x = 0;
-    movie->srcrect.y = 0;
-    movie->srcrect.w = movie->dstrect.w;
-    movie->srcrect.h = movie->dstrect.h;
-
-    if ((movie->colormodel == BC_YUV422) || (movie->colormodel == BC_YUV420P))
-    {
-        movie->Overlay = SDL_CreateYUVOverlay(movie->video_width, movie->video_height, (movie->colormodel == BC_YUV422)?SDL_YUY2_OVERLAY:SDL_IYUV_OVERLAY, movie->Screen);
-        if (movie->Overlay == NULL)
-        {
-#ifdef DEBUG_QTML
-            eprintf("error\n");
-#endif
-            return NULL;
-        }
-
-        movie->rowspan_y = movie->Overlay->pitches[0];
-        if (movie->Overlay->planes > 1)
-        {
-            movie->rowspan_uv = movie->Overlay->pitches[1];
-        }
-
-        movie->frame = lqt_rows_alloc(movie->video_width, movie->video_height, movie->colormodel, &(movie->rowspan_y), &(movie->rowspan_uv));
-
-        if (movie->frame == NULL)
-        {
-            SDL_FreeYUVOverlay(movie->Overlay);
-            movie->Overlay = NULL;
-#ifdef DEBUG_QTML
-            eprintf("error\n");
-#endif
-            return NULL;
-        }
-
-    }
-    else
-    {
-        movie->frame = lqt_rows_alloc(movie->video_width, movie->video_height, movie->colormodel, &(movie->rowspan_y), &(movie->rowspan_uv));
-
-        if (movie->frame == NULL)
-        {
-#ifdef DEBUG_QTML
-            eprintf("error\n");
-#endif
-            return NULL;
-        }
-
-        if (movie->colormodel == BC_RGB565)
-        {
-            movie->Video = SDL_CreateRGBSurfaceFrom(movie->frame[0], movie->video_width, movie->video_height, 16, movie->rowspan_y, 0xf800, 0x07e0, 0x001f, 0);
-        }
-        else if (movie->colormodel == BC_BGR565)
-        {
-            movie->Video = SDL_CreateRGBSurfaceFrom(movie->frame[0], movie->video_width, movie->video_height, 16, movie->rowspan_y, 0x001f, 0x07e0, 0xf800, 0);
-        }
-        else
-        {
-            movie->Video = SDL_CreateRGBSurfaceFrom(movie->frame[0], movie->video_width, movie->video_height, 32, movie->rowspan_y, 0xff0000, 0xff00, 0xff, 0);
-        }
-
-        if (movie->Video == NULL)
-        {
-            lqt_rows_free(movie->frame);
-            movie->frame = NULL;
-#ifdef DEBUG_QTML
-            eprintf("error\n");
-#endif
-            return NULL;
-        }
-
-        if (movie->dstrect.w > movie->video_width)
-        {
-            movie->Video2 = SDL_CreateRGBSurface(
-                (movie->Video->format->BitsPerPixel == 16)?movie->Screen->flags & SDL_HWSURFACE:0,
-                movie->Video->w * 2,
-                movie->Video->h * 2,
-                movie->Video->format->BitsPerPixel,
-                movie->Video->format->Rmask,
-                movie->Video->format->Gmask,
-                movie->Video->format->Bmask,
-                movie->Video->format->Amask
-            );
-        }
-
-    }
-#endif
 
     lqt_set_cmodel(movie->qt, 0, movie->colormodel);
 
@@ -1631,6 +1325,7 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
         else
         {
             SDL_AudioSpec desired;
+            SDL_AudioSpec obtained;
 
             desired.freq = movie->audio_sample_rate;
             desired.format = movie->audio_format;
@@ -1639,14 +1334,8 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
             desired.callback = &fill_audio;
             desired.userdata = movie;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
-            SDL_AudioSpec obtained;
-
             movie->device_id = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
             if (movie->device_id == 0)
-#else
-            if (0 != SDL_OpenAudio(&desired, NULL))
-#endif
             {
                 movie->play_audio = 0;
                 SDL_QuitSubSystem(SDL_INIT_AUDIO);
@@ -1663,11 +1352,7 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
             }
             else
             {
-#if SDL_VERSION_ATLEAST(2,0,0)
                 movie->silence = obtained.silence;
-#else
-                movie->silence = desired.silence;
-#endif
             }
         }
     }
@@ -1680,7 +1365,7 @@ void *NewMovieController_c (void *theMovie, const void *movieRect, int32_t someF
 
 //EXTERN_API( void )
 //DisposeMovieController          (ComponentInstance      mc)                                 THREEWORDINLINE(0x303C, 0x018B, 0xAAAA);
-void DisposeMovieController_c (void *mc)
+void CCALL DisposeMovieController_c (void *mc)
 {
     Movie movie;
 
@@ -1694,12 +1379,8 @@ void DisposeMovieController_c (void *mc)
 
     if (movie->play_audio)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_CloseAudioDevice(movie->device_id);
         movie->device_id = 0;
-#else
-        SDL_CloseAudio();
-#endif
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
 
         if (movie->audio_temp_buffer[0] != NULL)
@@ -1714,13 +1395,7 @@ void DisposeMovieController_c (void *mc)
         }
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     if (movie->Video != NULL) SDL_DestroyTexture(movie->Video);
-#else
-    if (movie->Overlay != NULL) SDL_FreeYUVOverlay(movie->Overlay);
-    if (movie->Video2 != NULL) SDL_FreeSurface(movie->Video2);
-    if (movie->Video != NULL) SDL_FreeSurface(movie->Video);
-#endif
     lqt_rows_free(movie->frame);
 }
 
@@ -1728,7 +1403,7 @@ void DisposeMovieController_c (void *mc)
 //QTRegisterAccessKey             (Str255                 accessKeyType,
 //                                 long                   flags,
 //                                 Handle                 accessKey)                          THREEWORDINLINE(0x303C, 0x02B4, 0xAAAA);
-int16_t QTRegisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *accessKey)
+int16_t CCALL QTRegisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *accessKey)
 {
 #ifdef DEBUG_QTML
     eprintf("QTRegisterAccessKey: 0x%" PRIxPTR " (%s), 0x%x, 0x%" PRIxPTR " - ", (uintptr_t)accessKeyType, accessKeyType, flags, (uintptr_t)accessKey);
@@ -1744,7 +1419,7 @@ int16_t QTRegisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *acce
 //QTUnregisterAccessKey           (Str255                 accessKeyType,
 //                                 long                   flags,
 //                                 Handle                 accessKey)                          THREEWORDINLINE(0x303C, 0x02B5, 0xAAAA);
-int16_t QTUnregisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *accessKey)
+int16_t CCALL QTUnregisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *accessKey)
 {
 #ifdef DEBUG_QTML
     eprintf("QTUnregisterAccessKey: 0x%" PRIxPTR " (%s), 0x%x, 0x%" PRIxPTR " - ", (uintptr_t)accessKeyType, accessKeyType, flags, (uintptr_t)accessKey);
@@ -1760,7 +1435,7 @@ int16_t QTUnregisterAccessKey_c (uint8_t *accessKeyType, int32_t flags, void *ac
 //EXTERN_API( ComponentResult )
 //MCIsPlayerEvent                 (MovieController        mc,
 //                                 const EventRecord *    e)                                  FIVEWORDINLINE(0x2F3C, 0x0004, 0x0007, 0x7000, 0xA82A);
-void *MCIsPlayerEvent_c (void *mc, const void *e)
+void * CCALL MCIsPlayerEvent_c (void *mc, const void *e)
 {
 #ifdef DEBUG_QTML
     eprintf("MCIsPlayerEvent: 0x%" PRIxPTR ", 0x%" PRIxPTR " - ", (uintptr_t)mc, (uintptr_t)e);
@@ -1774,7 +1449,6 @@ void *MCIsPlayerEvent_c (void *mc, const void *e)
         event = (const EventRecord *)e;
         movie = (Movie)mc;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
         if ((event->what == 0x8000)) // WM_APP
         {
             if (movie->rowspan_uv > 0)
@@ -1802,20 +1476,13 @@ void *MCIsPlayerEvent_c (void *mc, const void *e)
             movie->flipped = 1;
         }
         else
-#endif
         if ((event->what == 0x0012)) // WM_QUIT
         {
             if (movie->play_audio)
             {
-#if SDL_VERSION_ATLEAST(2,0,0)
                 SDL_LockAudioDevice(movie->device_id);
                 SDL_PauseAudioDevice(movie->device_id, 1);
                 SDL_UnlockAudioDevice(movie->device_id);
-#else
-                SDL_LockAudio();
-                SDL_PauseAudio(1);
-                SDL_UnlockAudio();
-#endif
             }
 
             movie->stop_playback = 1;
@@ -1836,7 +1503,7 @@ void *MCIsPlayerEvent_c (void *mc, const void *e)
 //MCDoAction                      (MovieController        mc,
 //                                 short                  action,
 //                                 void *                 params)                             FIVEWORDINLINE(0x2F3C, 0x0006, 0x0009, 0x7000, 0xA82A);
-void *MCDoAction_c (void *mc, int16_t action, void *params)
+void * CCALL MCDoAction_c (void *mc, int16_t action, void *params)
 {
 #ifdef DEBUG_QTML
     eprintf("MCDoAction: 0x%" PRIxPTR ", %i, 0x%" PRIxPTR " - ", (uintptr_t)mc, action, (uintptr_t)params);

@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2003  MaxSt ( maxst@hiend3d.com )
  *
- * Copyright (C) 2021-2023  Roman Pauer
+ * Copyright (C) 2021-2026  Roman Pauer
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,8 @@
 
 #if defined(X86SSE2) || defined(X64SSE2)
 #include <emmintrin.h>
+#elif defined(ARMV8) && (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <arm_neon.h>
 #elif defined(ARMV6) && defined(__ARM_ACLE) && __ARM_FEATURE_SIMD32
 #include <arm_acle.h>
 #endif
@@ -36,9 +38,10 @@
 #define trY   0x00300000
 #define trU   0x00000700
 #define trV   0x00000006
+#define trYUV (trY | trU | trV)
 
-#if !defined(ARMV8) && !defined(ARMV7)
-static inline uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__) || !(defined(ARMV8) || defined(ARMV7))
+static INLINE uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
 {
 #if defined(X86SSE2) || defined(X64SSE2)
     // using mmx registers might be faster than using sse registers, but mmx instructions are deprecated and shouldn't be used in new code
@@ -47,7 +50,7 @@ static inline uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
     value1 = _mm_cvtsi32_si128(yuv1);       // value1 = yuv1
     value2 = _mm_cvtsi32_si128(yuv2);       // value2 = yuv2
     tmp1 = value1;                          // tmp1 = yuv1
-    tmp2 = _mm_cvtsi32_si128(0x300706);     // tmp2 = 0x300706
+    tmp2 = _mm_cvtsi32_si128(trYUV);        // tmp2 = 0x300706
     tmp1 = _mm_max_epu8(tmp1, value2);      // tmp1 = max(yuv1, yuv2)
     value2 = _mm_min_epu8(value2, value1);  // value2 = min(yuv1, yuv2)
     tmp1 = _mm_sub_epi8(tmp1, value2);      // tmp1 = abs(yuv1 - yuv2)
@@ -55,11 +58,22 @@ static inline uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
     tmp1 = _mm_sub_epi8(tmp1, tmp2);        // tmp1 = max(0x300706, abs(yuv1 - yuv2)) - 0x300706
 
     return _mm_cvtsi128_si32(tmp1);
+#elif defined(ARMV8)
+    uint8x8_t value1, value2, tmp1, tmp2;
+
+    value1 = vreinterpret_u8_u32(vdup_n_u32(yuv1));     // value1 = yuv1
+    value2 = vreinterpret_u8_u32(vdup_n_u32(yuv2));     // value2 = yuv2
+    tmp2 = vreinterpret_u8_u32(vdup_n_u32(trYUV));      // tmp2 = 0x300706
+    tmp1 = vabd_u8(value1, value2);                     // tmp1 = abs(yuv1 - yuv2)
+    tmp1 = vmax_u8(tmp1, tmp2);                         // tmp1 = max(0x300706, abs(yuv1 - yuv2))
+    tmp1 = vsub_u8(tmp1, tmp2);                         // tmp1 = max(0x300706, abs(yuv1 - yuv2)) - 0x300706
+
+    return vget_lane_u32(vreinterpret_u32_u8(tmp1), 0);
 #elif defined(ARMV6)
 #if defined(__ARM_ACLE) && __ARM_FEATURE_SIMD32
     uint8x4_t tmp1, tmp2, dist;
 
-    dist = 0x300706;
+    dist = trYUV;
     tmp1 = __usub8(yuv1, yuv2);     // tmp1 = yuv1 - yuv2
     tmp2 = __usub8(yuv2, yuv1);     // tmp2 = yuv2 - yuv1
     tmp2 = __sel(tmp2, tmp1);       // tmp2 = (tmp2 >= 0)?tmp2:tmp1     // tmp2 = abs(yuv1 - yuv2)
@@ -71,7 +85,7 @@ static inline uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
     uint32_t tmp1, tmp2, zero, dist;
 
     zero = 0;
-    dist = 0x300706;
+    dist = trYUV;
 
     asm (
         "usub8 %[tmp1], %[value1], %[value2]    \n\t"   // tmp1 = value1 - value2           // tmp1 = yuv1 - yuv2
@@ -82,14 +96,14 @@ static inline uint32_t yuv_diff(uint32_t yuv1, uint32_t yuv2)
     asm (
         "usub8 %[tmp2], %[value2], %[value1]    \n\t"   // tmp2 = value2 - value1           // tmp2 = yuv2 - yuv1
         "sel %[tmp2], %[tmp2], %[tmp1]          \n\t"   // tmp2 = (tmp2 >= 0)?tmp2:tmp1     // tmp2 = abs(yuv1 - yuv2)
-        : [tmp2] "=r" (tmp2)
+        : [tmp2] "=&r" (tmp2)
         : [value1] "r" (yuv1), [value2] "r" (yuv2), [tmp1] "r" (tmp1)
         : "cc"
     );
     asm (
         "usub8 %[tmp1], %[dist], %[tmp2]        \n\t"   // tmp1 = dist - tmp2               // tmp1 = 0x300706 - abs(yuv1 - yuv2)
         "sel %[tmp1], %[zero], %[dist]          \n\t"   // tmp1 = (tmp1 >= 0)?zero:dist     // tmp1 = (0x300706 >= abs(yuv1 - yuv2))?0:0x300706
-        : [tmp1] "=r" (tmp1)
+        : [tmp1] "=&r" (tmp1)
         : [zero] "r" (zero), [dist] "r" (dist), [tmp2] "r" (tmp2)
         : "cc"
     );
@@ -134,7 +148,7 @@ void convert_yuv_32(const uint32_t *src, uint32_t *dst, unsigned int width) // d
     dst[width] = dst[width - 1];
 }
 
-#if !defined(ARMV8) && !defined(ARMV7)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__) || !(defined(ARMV8) || defined(ARMV7))
 #ifdef __cplusplus
 extern "C"
 #endif

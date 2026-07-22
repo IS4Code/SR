@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2021-2024 Roman Pauer
+ *  Copyright (C) 2021-2025 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "platform.h"
 
 
 #define CONFIG_FILE "BI3.cfg"
@@ -50,7 +51,7 @@ static char *trim_string(char *buf)
 }
 
 
-void ReadConfiguration(void) __attribute__((noinline));
+NOINLINE void ReadConfiguration(void);
 void ReadConfiguration(void)
 {
     FILE *f;
@@ -72,6 +73,7 @@ void ReadConfiguration(void)
     Audio_OPL3BankNumber = 59;
     Audio_OPL3Emulator = 1;
     Audio_MidiResamplingQuality = 0;
+    Audio_MT32DelaySysex = 0;
 
     Display_Width = 0;
     Display_Height = 0;
@@ -181,6 +183,14 @@ void ReadConfiguration(void)
                 {
                     Audio_MidiSubsystem = 12;
                 }
+                else if ( strcasecmp(param, "mt32-nativewindows") == 0 ) // param equals "mt32-nativewindows"
+                {
+                    Audio_MidiSubsystem = 21;
+                }
+                else if ( strcasecmp(param, "mt32-alsa") == 0 ) // param equals "mt32-alsa"
+                {
+                    Audio_MidiSubsystem = 22;
+                }
                 else if ( strcasecmp(param, "original") == 0 ) // param equals "original"
                 {
                     Audio_MidiSubsystem = 0;
@@ -242,6 +252,19 @@ void ReadConfiguration(void)
                 if (num_int >= 0)
                 {
                     Audio_MidiResamplingQuality = num_int;
+                }
+            }
+            else if ( strcasecmp(str, "MT32_Delay_Sysex") == 0 ) // str equals "MT32_Delay_Sysex"
+            {
+                // add delays when sending sysex messages on MT-32
+
+                if ( strcasecmp(param, "yes") == 0 ) // param equals "yes"
+                {
+                    Audio_MT32DelaySysex = 1;
+                }
+                else if ( strcasecmp(param, "no") == 0 ) // param equals "no"
+                {
+                    Audio_MT32DelaySysex = 0;
                 }
             }
 

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -23,7 +23,13 @@
  */
 
 #include <stdlib.h>
+#if !(defined(__GNUC__) && defined(_WIN64))
 #include <setjmp.h>
+#if defined(_MSC_VER) && defined(_WIN64)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#endif
 #include "../Game_defs.h"
 #include "llasm_cpu.h"
 
@@ -35,39 +41,79 @@ extern "C" {
 extern _cpu *x86_initialize_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
-extern void c_main_(CPU);
-extern void c_update_timer(CPU);
-extern void c_keyboard_interrupt(CPU);
+extern void CCALL c_main_(CPU);
+extern void CCALL c_update_timer(CPU);
+extern void CCALL c_keyboard_interrupt(CPU);
 
-extern void c_RunProcEBP(CPU);
+extern void CCALL c_RunProcEBP(CPU);
 
 #ifdef __cplusplus
 }
 #endif
 
-extern uint32_t X86_InterruptFlag;
-extern void *Game_MouseTable[8];
+EXTERNCVAR uint32_t X86_InterruptFlag;
+extern uint32_t Game_MouseTable[8];
 
+#if defined(__GNUC__) && defined(_WIN64)
+static intptr_t exit_env[5];
+#else
 static jmp_buf exit_env;
+#if defined(_MSC_VER) && defined(_WIN64)
+static int (*dyn_intrinsic_setjmp)(jmp_buf, void *);
+static void (*dyn_longjmp)(jmp_buf, int);
+#endif
+#endif
 
 static int main_return_value;
 
 
-EXTERNC void Game_ExitMain_Asm(int32_t status)
+EXTERNC void CCALL Game_ExitMain_Asm(int32_t status)
 {
     main_return_value = status;
+#if defined(__GNUC__) && defined(_WIN64)
+    __builtin_longjmp(exit_env, 1);
+#elif defined(_MSC_VER) && defined(_WIN64)
+    (dyn_longjmp != NULL) ? dyn_longjmp(exit_env, 1) : longjmp(exit_env, 1);
+#else
     longjmp(exit_env, 1);
+#endif
 }
 
-void Game_StopMain_Asm(void)
+void CCALL Game_StopMain_Asm(void)
 {
     main_return_value = 1;
+#if defined(__GNUC__) && defined(_WIN64)
+    __builtin_longjmp(exit_env, 1);
+#elif defined(_MSC_VER) && defined(_WIN64)
+    (dyn_longjmp != NULL) ? dyn_longjmp(exit_env, 1) : longjmp(exit_env, 1);
+#else
     longjmp(exit_env, 1);
+#endif
 }
 
-int Game_Main_Asm(int argc, PTR32(char) argv[])
+int CCALL Game_Main_Asm(int argc, char *argv[])
 {
+#if defined(__GNUC__) && defined(_WIN64)
+    if (__builtin_setjmp(exit_env) == 0)
+#elif defined(_MSC_VER) && defined(_WIN64)
+    HMODULE hLib;
+
+    hLib = GetModuleHandleW(L"ucrtbase.dll");
+    if (hLib != NULL)
+    {
+        dyn_intrinsic_setjmp = (int (*)(jmp_buf, void *))GetProcAddress(hLib, "__intrinsic_setjmp");
+        dyn_longjmp = (void (*)(jmp_buf, int))GetProcAddress(hLib, "longjmp");
+    }
+    if (hLib == NULL || dyn_intrinsic_setjmp == NULL || dyn_longjmp == NULL)
+    {
+        dyn_intrinsic_setjmp = NULL;
+        dyn_longjmp = NULL;
+    }
+
+    if (((dyn_intrinsic_setjmp != NULL) ? dyn_intrinsic_setjmp(exit_env, NULL) : setjmp(exit_env)) == 0)
+#else
     if (setjmp(exit_env) == 0)
+#endif
     {
         _cpu *cpu;
         int retval;
@@ -75,7 +121,7 @@ int Game_Main_Asm(int argc, PTR32(char) argv[])
         cpu = x86_initialize_cpu();
 
         eax = argc;
-        edx = (uintptr_t)argv;
+        edx = PTR2REG(argv);
 
         c_main_(cpu);
 
@@ -93,13 +139,13 @@ int Game_Main_Asm(int argc, PTR32(char) argv[])
     }
 }
 
-uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
+uint32_t CCALL Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
     uint32_t old_InterruptFlag, old_eflags;
 
-    if (Game_MouseTable[0] == NULL)
+    if (Game_MouseTable[0] == 0)
     {
         return 1;
     }
@@ -128,7 +174,7 @@ uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
     esp -= 4;
     *((uint32_t *)REG2PTR(esp)) = 0;    // emulate far call
 
-    ebp = (uintptr_t)Game_MouseTable[0];
+    ebp = Game_MouseTable[0];
     c_RunProcEBP(cpu);
 
     eax = old_eax;
@@ -145,13 +191,13 @@ uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
     return 0;
 }
 
-uint32_t Game_MouseButton(uint32_t state, uint32_t action, uint32_t x, uint32_t y)
+uint32_t CCALL Game_MouseButton(uint32_t state, uint32_t action, uint32_t x, uint32_t y)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
     uint32_t old_InterruptFlag, old_eflags;
 
-    if (Game_MouseTable[action] == NULL)
+    if (Game_MouseTable[action] == 0)
     {
         return 1;
     }
@@ -180,7 +226,7 @@ uint32_t Game_MouseButton(uint32_t state, uint32_t action, uint32_t x, uint32_t 
     esp -= 4;
     *((uint32_t *)REG2PTR(esp)) = 0;    // emulate far call
 
-    ebp = (uintptr_t)Game_MouseTable[action];
+    ebp = Game_MouseTable[action];
     c_RunProcEBP(cpu);
 
     eax = old_eax;
@@ -197,7 +243,7 @@ uint32_t Game_MouseButton(uint32_t state, uint32_t action, uint32_t x, uint32_t 
     return 0;
 }
 
-void Game_RunTimer_Asm(void)
+void CCALL Game_RunTimer_Asm(void)
 {
     _cpu *cpu;
     uint32_t old_InterruptFlag, old_eflags;
@@ -217,7 +263,7 @@ void Game_RunTimer_Asm(void)
 }
 
 
-void Game_RunInt9_Asm(void)
+void CCALL Game_RunInt9_Asm(void)
 {
     _cpu *cpu;
     uint32_t old_InterruptFlag, old_eflags;
@@ -237,10 +283,11 @@ void Game_RunInt9_Asm(void)
 }
 
 
-void Game_RunAILcallback_Asm(AIL_sample_CB callback, AIL_sample *sample)
+void CCALL Game_RunAILcallback_Asm(AIL_sample_CB callback, AIL_sample *sample)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
+    uint32_t old_InterruptFlag, old_eflags;
 
     cpu = x86_initialize_cpu();
 
@@ -252,10 +299,14 @@ void Game_RunAILcallback_Asm(AIL_sample_CB callback, AIL_sample *sample)
     old_esi = esi;
     old_edi = edi;
 
-    esp -= 4;
-    *((uint32_t *)REG2PTR(esp)) = (uintptr_t)sample;
+    old_InterruptFlag = X86_InterruptFlag;
+    old_eflags = eflags;
+    eflags = 0x3202;
 
-    ebp = (uintptr_t)callback;
+    esp -= 4;
+    *((uint32_t *)REG2PTR(esp)) = PTR2REG(sample);
+
+    ebp = PTR2REG(callback);
     c_RunProcEBP(cpu);
 
     esp += 4;
@@ -267,5 +318,8 @@ void Game_RunAILcallback_Asm(AIL_sample_CB callback, AIL_sample *sample)
     ebp = old_ebp;
     esi = old_esi;
     edi = old_edi;
+
+    eflags = old_eflags;
+    X86_InterruptFlag = old_InterruptFlag;
 }
 

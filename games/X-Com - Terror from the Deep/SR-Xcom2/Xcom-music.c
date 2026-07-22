@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +22,6 @@
  *
  */
 
-#include <malloc.h>
 #include <string.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
@@ -33,8 +32,6 @@
 
 void Game_SetMusicVolume(void)
 {
-    int new_volume;
-
     if (Game_MidiSubsystem)
     {
         if (Game_MidiSubsystem <= 20)
@@ -49,11 +46,8 @@ void Game_SetMusicVolume(void)
     }
 
 //senquack - SOUND STUFF
-//    Mix_VolumeMusic((Game_AudioMasterVolume * Game_MusicSequence.volume) >> 7);
     // Volume's relative loudness is now configurable:
-    new_volume = (Game_AudioMasterVolume * Game_MusicSequence.volume) >> 7;
-    new_volume = (new_volume * Game_AudioMusicVolume) >> 7;
-    Mix_VolumeMusic(new_volume);
+    Mix_VolumeMusic((Game_AudioMusicVolume * Game_MusicSequence.volume) >> 7);
 }
 
 void Game_start_sequence(uint8_t *seq)
@@ -110,12 +104,7 @@ void Game_start_sequence(uint8_t *seq)
         Game_MusicSequence.midi_RW = SDL_RWFromMem(Game_MusicSequence.midi, Game_MusicSequence.midi_size);
         if (Game_MusicSequence.midi_RW == NULL) return;
 
-        Game_MusicSequence.midi_music = Mix_LoadMUS_RW(
-            Game_MusicSequence.midi_RW
-#if SDL_VERSION_ATLEAST(2,0,0)
-            , 0
-#endif
-        );
+        Game_MusicSequence.midi_music = Mix_LoadMUS_RW(Game_MusicSequence.midi_RW, 0);
         if (Game_MusicSequence.midi_music == NULL) return;
     }
 

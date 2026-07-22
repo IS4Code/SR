@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -26,7 +26,6 @@
 #define _TIME_BITS 64
 #include <stdio.h>
 #include <time.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Xcom-int.h"
 #include "Xcom-int3.h"
@@ -35,7 +34,7 @@
 #include "Game_thread.h"
 #include "Game-int.h"
 
-void X86_InterruptProcedure(
+void CCALL X86_InterruptProcedure(
     const uint8_t IntNum,
     _cpu_regs *regs)
 {
@@ -60,11 +59,7 @@ void X86_InterruptProcedure(
                     if (AL == 0x13)
                     {
 #if (EXE_BUILD != EXE_COMBINED)
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window != NULL)
-                    #else
-                        if (Game_Screen != NULL)
-                    #endif
                         {
                             event.type = SDL_USEREVENT;
                             event.user.code = EC_DISPLAY_DESTROY;
@@ -86,11 +81,7 @@ void X86_InterruptProcedure(
 
                         SDL_SemWait(Game_DisplaySem);
 
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window == NULL)
-                    #else
-                        if (Game_Screen == NULL)
-                    #endif
                         {
 #if defined(__DEBUG__)
                             fprintf (stderr, "Error: Couldn't set video mode\n");
@@ -102,11 +93,7 @@ void X86_InterruptProcedure(
                     }
                     else if (AL == 0x03)
                     {
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window != NULL)
-                    #else
-                        if (Game_Screen != NULL)
-                    #endif
                         {
                             event.type = SDL_USEREVENT;
 #if (EXE_BUILD == EXE_COMBINED)
@@ -210,7 +197,7 @@ void X86_InterruptProcedure(
                     }
                     else
                     {
-                        ECX = (uint32_t)(uintptr_t) Game_AllocateMemory((uint32_t) BX << 4);
+                        PTR_ECX = Game_AllocateMemory((uint32_t) BX << 4);
                         if (ECX)
                         {
 #if defined(__DEBUG__)
@@ -248,7 +235,7 @@ void X86_InterruptProcedure(
 #if defined(__DEBUG__)
                             fprintf(stderr, "Running Original Interrupt...\n");
 #endif
-                            Game_intDPMI(BL, (Game_DPMIREGS *)(uintptr_t) EDI);
+                            Game_intDPMI(BL, (Game_DPMIREGS *)(void *) PTR_EDI);
                         }
                         else
                         {

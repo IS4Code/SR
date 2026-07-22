@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2023 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -57,8 +57,8 @@ struct func_parameter_struct {
 }
 
 struct func_struct {
-    string name;
-    bool has_return_value;
+    string real_name;
+    bool has_return_value, return_value_is_pointer;
     func_parameter_struct[] params;
 }
 
@@ -118,8 +118,9 @@ enum RegisterState { Empty, Read, Write }
 
 string input_filename, output_filename, input_directory, return_procedure, dispatcher_procedure;
 string[] include_directories;
-bool output_preprocessed_file, input_reading_proc, input_reading_dataseg, position_independent_code, old_bitcode, no_tail_calls, pointer_size_64, inline_idiv_instr, inline_float_instr, inline_float2_instr;
+bool output_preprocessed_file, input_reading_proc, input_reading_dataseg, position_independent_code, old_bitcode, no_tail_calls, pointer_size_64, pointers_with_offset, inline_idiv_instr, inline_float_instr, inline_float2_instr;
 uint global_optimization_level, procedure_optimization_level;
+string[string] function_names;
 
 int file_input_level;
 file_input_struct[] file_input_stack;
@@ -143,7 +144,7 @@ func_struct[string] func_list;
 proc_struct[string] proc_list;
 string[] local_proc_names;
 
-bool used_ctlz_intrinsics, used_bswap_intrinsics, used_sqrt_intrinsics, used_sin_intrinsics, used_cos_intrinsics, used_log_intrinsics, used_log10_intrinsics, used_fabs_intrinsics, used_round_intrinsics, used_pow_intrinsics, used_log2_intrinsics, create_ctor_function;
+bool used_ctlz_intrinsics, used_bswap_intrinsics, used_sqrt_intrinsics, used_sin_intrinsics, used_cos_intrinsics, used_tan_intrinsics, used_log_intrinsics, used_log10_intrinsics, used_fabs_intrinsics, used_round_intrinsics, used_pow_intrinsics, used_log2_intrinsics, create_ctor_function;
 
 int num_output_lines;
 string[] output_lines;
@@ -151,8 +152,11 @@ string[] output_lines;
 immutable int num_regs = 12;
 immutable int num_regs_valid = 9;
 immutable int num_float_regs = 8;
+immutable int num_regs64 = 1;
+immutable int regs64_start_num = 13;
 string[] registers_base_list = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "eflags", "st_top", "st_sw_cond", "st_cw", "tmpadr", "tmpcnd", "tmp0", "tmp1", "tmp2", "tmp3", "tmp4", "tmp5", "tmp6", "tmp7", "tmp8", "tmp9", "tmp10", "tmp11", "tmp12", "tmp13", "tmp14", "tmp15", "tmp16", "tmp17", "tmp18", "tmp19"];
-string[] keywords_base_list = ["proc", "extern", "define", "macro", "func", "funcv", "include", "endp", "endm", "datasegment", "dlabel", "dalign", "db", "dinclude", "daddr", "dskip", "endd"];
+string[] registers64_base_list = ["ptrofs"];
+string[] keywords_base_list = ["proc", "extern", "define", "macro", "func", "funcp", "funcv", "include", "endp", "endm", "datasegment", "dlabel", "dalign", "db", "dinclude", "daddr", "dskip", "endd"];
 string[] instructions_base_list = [
     "mov reg, reg/const/procaddr/externaddr",
     "add reg, reg, reg/const",
@@ -262,6 +266,7 @@ string[] instructions_float2_list = [
     "FMODR_VOID",
     "FSIN_VOID",
     "FCOS_VOID",
+    "FTAN_VOID",
     "FLOG_VOID",
     "FLOG10_VOID",
     "FROUND_VOID",
@@ -272,11 +277,14 @@ string[] instructions_float2_list = [
 
 bool[string] keywords_list, registers_list, temp_regs_list;
 string[string] register_numbers_str;
+string[string] register64_numbers_str;
 instruction_struct[string] instructions_list;
 RegisterState[num_regs] register_state;
 RegisterState[num_float_regs] float_reg_state;
+RegisterState[num_regs64] register64_state;
 string[string] current_temporary_register;
 string[int] current_temporary_float_register;
+string[string] current_temporary_register64;
 
 string[] str_split_strip(string str, dchar delim)
 {
@@ -376,6 +384,8 @@ void add_instruction_to_list(string instruction, bool inlined_instr)
 
 void initialize()
 {
+    function_names = function_names.rehash;
+
     foreach(register; registers_base_list)
     {
         registers_list[register] = true;
@@ -391,6 +401,12 @@ void initialize()
         register_numbers_str[registers_base_list[i]] = to!string(i);
     }
     register_numbers_str = register_numbers_str.rehash;
+
+    for (int i = 0; i < num_regs64; i++)
+    {
+        register64_numbers_str[registers64_base_list[i]] = to!string(i + regs64_start_num);
+    }
+    register64_numbers_str = register64_numbers_str.rehash;
 
     for (int i = num_regs; i < registers_base_list.length; i++)
     {
@@ -438,6 +454,7 @@ void initialize()
     used_sqrt_intrinsics = false;
     used_sin_intrinsics = false;
     used_cos_intrinsics = false;
+    used_tan_intrinsics = false;
     used_log_intrinsics = false;
     used_log10_intrinsics = false;
     used_fabs_intrinsics = false;
@@ -757,6 +774,9 @@ bool check_instruction_pass1(ref input_line_struct instr_line)
                 break;
             case "FCOS_VOID":
                 used_cos_intrinsics = true;
+                break;
+            case "FTAN_VOID":
+                used_tan_intrinsics = true;
                 break;
             case "FLOG_VOID":
                 used_log_intrinsics = true;
@@ -1303,7 +1323,130 @@ string get_load_type(string type)
     }
 }
 
-string get_parameter_read_value(param_struct param, bool as_pointer = false)
+string get_reg64_value(string name)
+{
+    string regnumstr = register64_numbers_str[name];
+    string reg;
+
+    if (procedure_optimization_level >= 1)
+    {
+        int regnum = to!int(regnumstr) - regs64_start_num;
+
+        if (register64_state[regnum] == RegisterState.Empty)
+        {
+            register64_state[regnum] = RegisterState.Read;
+
+            string addr = get_new_temporary_register();
+            reg = get_new_temporary_register();
+            add_output_line(addr ~ " = getelementptr " ~ get_load_type("%_cpu") ~ " %cpu, i32 0, i32 " ~ regnumstr);
+            add_output_line(reg ~ " = load " ~ get_load_type("i64") ~ " " ~ addr ~ ", align 8");
+
+            if (procedure_optimization_level >= 2)
+            {
+                current_temporary_register64[name] = reg.idup;
+            }
+            else
+            {
+                add_output_line("store i64 " ~ reg ~ ", i64* %" ~ name ~ ", align 8");
+            }
+        }
+        else
+        {
+            if (procedure_optimization_level >= 2)
+            {
+                reg = current_temporary_register64[name].idup;
+            }
+            else
+            {
+                reg = get_new_temporary_register();
+                add_output_line(reg ~ " = load " ~ get_load_type("i64") ~ " %" ~ name ~ ", align 8");
+            }
+        }
+    }
+    else
+    {
+        string addr = get_new_temporary_register();
+        reg = get_new_temporary_register();
+        add_output_line(addr ~ " = getelementptr " ~ get_load_type("%_cpu") ~ " %cpu, i32 0, i32 " ~ regnumstr);
+        add_output_line(reg ~ " = load " ~ get_load_type("i64") ~ " " ~ addr ~ ", align 8");
+    }
+
+    return reg;
+}
+
+string get_int32_to_ptr(string value, string ptrtype = "i8", bool nullable_pointer = false)
+{
+    if (pointers_with_offset)
+    {
+        string ptrofs = get_reg64_value("ptrofs");
+        string addr1 = get_new_temporary_register();
+        string addr2 = get_new_temporary_register();
+        string addr3 = get_new_temporary_register();
+
+        add_output_line(addr1 ~ " = zext i32 " ~ value ~ " to i64");
+        add_output_line(addr2 ~ " = add i64 " ~ addr1 ~ ", " ~ ptrofs);
+        add_output_line(addr3 ~ " = inttoptr i64 " ~ addr2 ~ " to " ~ ptrtype ~ "*");
+
+        if (nullable_pointer)
+        {
+            string cond = get_new_temporary_register();
+            string addr4 = get_new_temporary_register();
+
+            add_output_line(cond ~ " = icmp eq i64 " ~ addr1 ~ ", 0");
+            add_output_line(addr4 ~ " = select i1 " ~ cond ~ ", " ~ ptrtype ~ "* null, " ~ ptrtype ~ "* " ~ addr3);
+
+            return addr4;
+        }
+        else
+        {
+            return addr3;
+        }
+    }
+    else
+    {
+        string addr = get_new_temporary_register();
+
+        add_output_line(addr ~ " = inttoptr i32 " ~ value ~ " to " ~ ptrtype ~ "*");
+
+        return addr;
+    }
+}
+
+string get_addr_to_int32(string value, string ptrtype = "i8", bool nullable_pointer = false)
+{
+    if (pointers_with_offset)
+    {
+        string ptrofs = get_reg64_value("ptrofs");
+        string addr1 = get_new_temporary_register();
+        string addr2 = get_new_temporary_register();
+        string addr3 = get_new_temporary_register();
+
+        add_output_line(addr1 ~ " = ptrtoint " ~ ptrtype ~ "* " ~ value ~ " to i64");
+        add_output_line(addr2 ~ " = sub i64 " ~ addr1 ~ ", " ~ ptrofs);
+        add_output_line(addr3 ~ " = trunc i64 " ~ addr2 ~ " to i32");
+
+        if (nullable_pointer)
+        {
+            string cond = get_new_temporary_register();
+            string addr4 = get_new_temporary_register();
+
+            add_output_line(cond ~ " = icmp eq i64 " ~ addr1 ~ ", 0");
+            add_output_line(addr4 ~ " = select i1 " ~ cond ~ ", i32 0, i32 " ~ addr3);
+
+            return addr4;
+        }
+        else
+        {
+            return addr3;
+        }
+    }
+    else
+    {
+        return "ptrtoint (" ~ ptrtype ~ "* " ~ value ~ " to i32)";
+    }
+}
+
+string get_parameter_read_value(param_struct param, bool as_pointer = false, bool nullable_pointer = false)
 {
     switch (param.type)
     {
@@ -1380,9 +1523,7 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false)
 
             if (as_pointer)
             {
-                string reg2 = get_new_temporary_register();
-                add_output_line(reg2 ~ " = inttoptr i32 " ~ reg ~ " to i8*");
-                return reg2;
+                return get_int32_to_ptr(reg, "i8", nullable_pointer);
             }
             else
             {
@@ -1399,7 +1540,7 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false)
                     }
                     else
                     {
-                        return "ptrtoint (i8* @" ~ param.value ~ " to i32)";
+                        return get_addr_to_int32("@" ~ param.value);
                     }
                 }
                 else
@@ -1410,7 +1551,7 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false)
                     }
                     else
                     {
-                        return "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ") to i32)";
+                        return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ")");
                     }
                 }
             }
@@ -1424,7 +1565,7 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false)
                 }
                 else
                 {
-                    return "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ") to i32)";
+                    return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")");
                 }
             }
         case "procaddr":
@@ -1434,12 +1575,19 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false)
             }
             else
             {
-                return "ptrtoint (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ param.value ~ " to i32)";
+                return get_addr_to_int32("@" ~ param.value, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
             }
         default:
             if (as_pointer)
             {
-                return "inttoptr (i32 (" ~ param.value ~ ") to i8*)";
+                if (pointers_with_offset)
+                {
+                    return get_int32_to_ptr("(" ~ param.value ~ ")", "i8", nullable_pointer);
+                }
+                else
+                {
+                    return "inttoptr (i32 (" ~ param.value ~ ") to i8*)";
+                }
             }
             else
             {
@@ -1494,11 +1642,7 @@ string get_parameter_read_addr(param_struct param, string ptrtype)
     else
     {
         string reg = get_parameter_read_value(param);
-        string addr = get_new_temporary_register();
-
-        add_output_line(addr ~ " = inttoptr i32 " ~ reg ~ " to " ~ ptrtype ~ "*");
-
-        return addr;
+        return get_int32_to_ptr(reg, ptrtype);
     }
 }
 
@@ -1839,8 +1983,10 @@ bool process_proc_body(string proc_name)
     proc_instr_struct[] proc_instr_info;
     RegisterState[num_regs] if_reg_state;
     RegisterState[num_float_regs] if_float_reg_state;
+    RegisterState[num_regs64] if_reg64_state;
     bool[string] used_reg_list;
     bool[int] used_float_reg_list;
+    bool[string] used_reg64_list;
 
     if (curproc.lines.length == 0)
     {
@@ -1856,6 +2002,11 @@ bool process_proc_body(string proc_name)
 /* analyze / check pass */
 
     current_float_stack_top = 0;
+
+    if (pointers_with_offset)
+    {
+        used_reg64_list["ptrofs"] = true;
+    }
 
     for (int linenum = 0; linenum < curproc.lines.length; linenum++)
     {
@@ -1960,7 +2111,7 @@ bool process_proc_body(string proc_name)
 
             if (params[i] in func_list)
             {
-                paramvals[i] = param_struct("funcaddr".idup, params[i]);
+                paramvals[i] = param_struct("funcaddr".idup, func_list[params[i]].real_name);
                 continue;
             }
 
@@ -2312,6 +2463,13 @@ bool process_proc_body(string proc_name)
                 // update list of used registers in procedure
                 used_reg_list["st_top"] = true;
                 break;
+            case "FTAN_VOID":
+                proc_instr_info[linenum].write_reg[0] = "st_sw_cond";
+                proc_instr_info[linenum].write_reg[1] = "st_top";
+                proc_instr_info[linenum].write_float_reg[0] = current_float_stack_top;
+                current_float_stack_top = (current_float_stack_top + 7) & 7;
+                proc_instr_info[linenum].write_float_reg[1] = current_float_stack_top;
+                break;
             case "FXCH_ST": // FXCH_ST const
                 proc_instr_info[linenum].write_reg[0] = "st_sw_cond";
                 proc_instr_info[linenum].write_float_reg[0] = current_float_stack_top;
@@ -2582,7 +2740,8 @@ bool process_proc_body(string proc_name)
     label_index = 0;
     current_temporary_register = (string[string]).init; // clear list
     current_temporary_float_register = (string[int]).init; // clear list
-    if (current_temporary_register.length != 0 || current_temporary_float_register.length != 0)
+    current_temporary_register64 = (string[string]).init; // clear list
+    if (current_temporary_register.length != 0 || current_temporary_float_register.length != 0 || current_temporary_register64.length != 0)
     {
         write_error2("Error clearing current_temporary_register");
         return false;
@@ -2605,6 +2764,15 @@ bool process_proc_body(string proc_name)
             if (procedure_optimization_level == 1 && i in used_float_reg_list)
             {
                 add_output_line("%st" ~ to!string(i) ~ " = alloca double, align 8");
+            }
+        }
+
+        for (int i = 0; i < num_regs64; i++)
+        {
+            register64_state[i] = RegisterState.Empty;
+            if (procedure_optimization_level == 1 && registers64_base_list[i] in used_reg64_list)
+            {
+                add_output_line("%" ~ registers64_base_list[i] ~ " = alloca i64, align 8");
             }
         }
     }
@@ -2813,9 +2981,8 @@ bool process_proc_body(string proc_name)
                         else
                         {
                             string dst = get_parameter_read_value(paramvals[0]);
-                            string addr = get_new_temporary_register();
+                            string addr = get_int32_to_ptr(dst, "void(%_cpu*)");
 
-                            add_output_line(addr ~ " = inttoptr i32 " ~ dst ~ " to void(%_cpu*)*");
                             add_output_line("musttail call fastcc void " ~ addr ~ "(%_cpu* %cpu) nounwind");
                         }
                     }
@@ -2905,7 +3072,7 @@ bool process_proc_body(string proc_name)
                     src.length = paramvals.length;
                     for (int i = 0; i < paramvals.length; i++)
                     {
-                        src[i] = get_parameter_read_value(paramvals[i], (func.params[i].type == ParameterType.Pointer));
+                        src[i] = get_parameter_read_value(paramvals[i], (func.params[i].type == ParameterType.Pointer), true);
                     }
 
                     string srcstr = "";
@@ -2946,19 +3113,45 @@ bool process_proc_body(string proc_name)
                             float_reg_state[i] = RegisterState.Empty;
                         }
                         current_temporary_float_register = (string[int]).init; // clear list
+
+                        for (int i = 0; i < num_regs64; i++)
+                        {
+                            register64_state[i] = RegisterState.Empty;
+                        }
+                        current_temporary_register64 = (string[string]).init; // clear list
                     }
 
                     if (func.has_return_value)
                     {
                         string dst = get_new_temporary_register();
 
-                        add_output_line(dst ~ " = call i32 @" ~ current_line.param1 ~ "(" ~ srcstr ~ ") nounwind");
+                        add_output_line(dst ~ " = call " ~ (func.return_value_is_pointer ? "i8*" : "i32") ~ " @" ~ func.real_name ~ "(" ~ srcstr ~ ") nounwind");
 
-                        store_temporary_register_to_reg(dst, "tmp0", last_reg_write[0]);
+                        if (func.return_value_is_pointer)
+                        {
+                            string dst2;
+
+                            if (pointers_with_offset)
+                            {
+                                dst2 = get_addr_to_int32(dst, "i8", true);
+                            }
+                            else
+                            {
+                                dst2 = get_new_temporary_register();
+
+                                add_output_line(dst2 ~ " = ptrtoint i8* " ~ dst ~ " to i32");
+                            }
+
+                            store_temporary_register_to_reg(dst2, "tmp0", last_reg_write[0]);
+                        }
+                        else
+                        {
+                            store_temporary_register_to_reg(dst, "tmp0", last_reg_write[0]);
+                        }
                     }
                     else
                     {
-                        add_output_line("call void @" ~ current_line.param1 ~ "(" ~ srcstr ~ ") nounwind");
+                        add_output_line("call void @" ~ func.real_name ~ "(" ~ srcstr ~ ") nounwind");
                     }
                 }
                 break;
@@ -3013,6 +3206,7 @@ bool process_proc_body(string proc_name)
                     {
                         if_reg_state = register_state.dup;
                         if_float_reg_state = float_reg_state.dup;
+                        if_reg64_state = register64_state.dup;
                     }
 
                     add_output_line(cond ~ " = icmp " ~ condtype ~ " i32 " ~ condreg ~ ", 0");
@@ -3084,6 +3278,14 @@ bool process_proc_body(string proc_name)
                             if (register_state[i] != if_reg_state[i])
                             {
                                 register_state[i] = RegisterState.Empty;
+                            }
+                        }
+
+                        for (int i = 0; i < num_regs64; i++)
+                        {
+                            if (register64_state[i] != if_reg64_state[i])
+                            {
+                                register64_state[i] = RegisterState.Empty;
                             }
                         }
                     }
@@ -3428,6 +3630,27 @@ bool process_proc_body(string proc_name)
                     store_temporary_register_to_reg("0", "st_sw_cond", last_reg_write[0]);
                 }
                 break;
+            case "FTAN_VOID":
+                {
+                    string top1 = get_parameter_read_value(param_struct("reg", "st_top"));
+                    string src = get_float_reg_value(top1, 0, current_float_stack_top);
+                    string dst = get_new_temporary_register();
+
+                    add_output_line(dst ~ " = call double @llvm.tan.f64(double " ~ src ~ ")");
+
+                    store_temporary_register_to_float_reg(dst, top1, 0, current_float_stack_top, last_float_reg_write[0]);
+
+                    string tmp2 = get_new_temporary_register();
+                    string top2 = get_new_temporary_register();
+
+                    add_output_line(tmp2 ~ " = add i32 " ~ top1 ~ ", 7");
+                    add_output_line(top2 ~ " = and i32 " ~ tmp2 ~ ", 7");
+
+                    store_temporary_register_to_float_reg("1.0", top2, 0, (current_float_stack_top + 7) & 7, last_float_reg_write[1]);
+                    store_temporary_register_to_reg(top2, "st_top", last_reg_write[1]);
+                    store_temporary_register_to_reg("0", "st_sw_cond", last_reg_write[0]);
+                }
+                break;
             case "FPOW_VOID":
             case "FPOWR_VOID":
                 {
@@ -3511,10 +3734,12 @@ void write_usage()
     stderr.writeln("  -p              output preprocessed file");
     stderr.writeln("  -pic            generate position independent code");
     stderr.writeln("  -m64            set generated pointer size to 64 bits");
+    stderr.writeln("  -ptrofs         use pointers with offset (requires -m64)");
     stderr.writeln("  -no-tail-calls  disable generating tail calls");
     stderr.writeln("  -inline-idiv    allow inlining integer division instructions");
     stderr.writeln("  -inline-float   allow inlining floating point instructions");
     stderr.writeln("  -inline-float2  allow inlining floating point intrinsics/functions");
+    stderr.writeln("  -func-name A=B  rename function name A to B");
 }
 
 public int main(string[] args)
@@ -3530,9 +3755,11 @@ public int main(string[] args)
     old_bitcode = false;
     no_tail_calls = false;
     pointer_size_64 = false;
+    pointers_with_offset = false;
     inline_idiv_instr = false;
     inline_float_instr = false;
     inline_float2_instr = false;
+    function_names = (string[string]).init;
     for (int i = 1; i < args.length; i++)
     {
         switch(args[i])
@@ -3579,6 +3806,9 @@ public int main(string[] args)
             case "-m64":
                 pointer_size_64 = true;
                 break;
+            case "-ptrofs":
+                pointers_with_offset = true;
+                break;
             case "-inline-idiv":
                 inline_idiv_instr = true;
                 break;
@@ -3587,6 +3817,27 @@ public int main(string[] args)
                 break;
             case "-inline-float2":
                 inline_float2_instr = true;
+                break;
+            case "-func-name":
+                if (i + 1 == args.length)
+                {
+                    stderr.writeln("Missing argument: " ~ args[i]);
+                    write_usage();
+                    return 2;
+                }
+
+                {
+                    auto fname = str_split_strip(args[i + 1], '=');
+                    if (fname.length != 2 || fname[0] == "" || fname[1] == "" || fname[0] in function_names)
+                    {
+                        stderr.writeln("Bad argument: " ~ args[i] ~ " " ~ args[i + 1]);
+                        write_usage();
+                        return 2;
+                    }
+
+                    function_names[fname[0]] = fname[1];
+                    i++;
+                }
                 break;
             default:
                 if (input_filename == "")
@@ -3600,6 +3851,13 @@ public int main(string[] args)
                     return 1;
                 }
         }
+    }
+
+    if (pointers_with_offset && !pointer_size_64)
+    {
+        stderr.writeln("Parameter -ptrofs requires also parameter -m64");
+        write_usage();
+        return 3;
     }
 
     if (input_filename == "")
@@ -3871,7 +4129,7 @@ public int main(string[] args)
             continue;
         }
 
-        if (current_line.word == "func" || current_line.word == "funcv")
+        if (current_line.word == "func" || current_line.word == "funcp" || current_line.word == "funcv")
         {
             if (input_reading_proc || input_reading_dataseg)
             {
@@ -3899,8 +4157,9 @@ public int main(string[] args)
 
             func_struct newfunc;
 
-            newfunc.name = current_line.param1.idup;
-            newfunc.has_return_value = (current_line.word == "func");
+            newfunc.real_name = (current_line.param1 in function_names) ? function_names[current_line.param1] : current_line.param1.idup;
+            newfunc.has_return_value = (current_line.word == "func" || current_line.word == "funcp");
+            newfunc.return_value_is_pointer = (current_line.word == "funcp");
             newfunc.params = get_functions_params(get_current_params2());
 
             func_list[current_line.param1] = newfunc;
@@ -4739,7 +4998,7 @@ public int main(string[] args)
         add_output_line("target datalayout = \"e-p:32:32-f64:32:64-n32\"");
     }
     add_output_line("");
-    add_output_line("%_cpu = type { i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, [8 x double] }");
+    add_output_line("%_cpu = type { i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, [8 x double], i64 }");
 
     add_output_line("");
     add_output_line("; data segments");
@@ -4761,7 +5020,7 @@ public int main(string[] args)
                 dataseg_type ~= "i32";
                 dataseg_values ~= "i32 ";
 
-                if (position_independent_code && pointer_size_64)
+                if (pointers_with_offset || (position_independent_code && pointer_size_64))
                 {
                     dataseg_values ~= "0";
                     dataseg_list[dataseg_name].addr_in_ctor = true;
@@ -4816,7 +5075,7 @@ public int main(string[] args)
         {
             if (!position_independent_code || label.isglobal)
             {
-                add_output_line("@" ~ label.name ~ " = " ~ (label.isglobal?"":"private ") ~ "alias " ~ get_load_type("i8") ~ " getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* @" ~ dataseg_name ~ " to i8*), i32 " ~ to!string(label.offset) ~ ")");
+                add_output_line("@" ~ label.name ~ " = " ~ (label.isglobal?"protected":"private") ~ " alias " ~ get_load_type("i8") ~ " getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* @" ~ dataseg_name ~ " to i8*), i32 " ~ to!string(label.offset) ~ ")");
             }
         }
     }
@@ -4859,7 +5118,7 @@ public int main(string[] args)
             func_args ~= datatype;
         }
 
-        add_output_line("declare external ccc " ~ (func.has_return_value?"i32":"void") ~ " @" ~ func_name ~ "(" ~ func_args ~ ") nounwind");
+        add_output_line("declare ccc " ~ (func.has_return_value?(func.return_value_is_pointer?"i8*":"i32"):"void") ~ " @" ~ func.real_name ~ "(" ~ func_args ~ ") nounwind");
     }
 
 
@@ -4871,7 +5130,7 @@ public int main(string[] args)
 
         if (!proc.isexternal) continue;
 
-        add_output_line("declare external fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu*) nounwind");
+        add_output_line("declare hidden fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu*) nounwind");
         if (proc.alias_name != "")
         {
             //add_output_line("@" ~ proc.alias_name ~ " = external alias void(%_cpu*)* @" ~ proc_name);
@@ -4899,6 +5158,10 @@ public int main(string[] args)
     if (used_cos_intrinsics)
     {
         add_output_line("declare double @llvm.cos.f64(double)");
+    }
+    if (used_tan_intrinsics)
+    {
+        add_output_line("declare double @llvm.tan.f64(double)");
     }
     if (used_log_intrinsics)
     {
@@ -4931,7 +5194,7 @@ public int main(string[] args)
     {
         auto proc = proc_list[proc_name];
 
-        add_output_line("define " ~ ((proc.ispublic || proc.isglobal)?"":"private ") ~ "fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu* %cpu) nounwind {");
+        add_output_line("define " ~ ((proc.isglobal)?"protected":((proc.ispublic)?"hidden":"private")) ~ " fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu* %cpu) nounwind {");
 
         if (!process_proc_body(proc_name))
         {
@@ -4968,34 +5231,46 @@ public int main(string[] args)
                 dispatcher_procedure = "__dispatcher_procedure";
                 add_output_line("define private fastcc void @" ~ dispatcher_procedure ~ "(%_cpu* %cpu, i8*(%_cpu*)* %proc) nounwind {");
 
-                add_output_line("%tproc = alloca i8*(%_cpu*)*, align 4");
+                string aligntproc = ", align " ~ ((pointer_size_64)?"8":"4");
+                add_output_line("%tproc = alloca i8*(%_cpu*)*" ~ aligntproc);
 
                 add_output_line("%1 = getelementptr " ~ get_load_type("%_cpu") ~ " %cpu, i32 0, i32 " ~ register_numbers_str["esp"]);
                 add_output_line("%2 = load " ~ get_load_type("i32") ~ " %1, align 4");
                 add_output_line("%3 = sub i32 %2, 4");
                 add_output_line("store i32 %3, i32* %1, align 4");
 
-                add_output_line("%4 = inttoptr i32 %3 to i32*");
-                add_output_line("%5 = ptrtoint " ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ return_procedure ~ " to i32");
-                add_output_line("store i32 %5, i32* %4, align 4");
+                procedure_optimization_level = 2;
+                temporary_register_index = 3;
+                for (int i = 0; i < num_regs64; i++)
+                {
+                    register64_state[i] = RegisterState.Empty;
+                }
 
-                add_output_line("store i8*(%_cpu*)* %proc, i8*(%_cpu*)** %tproc, align 4");
+                string r4 = get_int32_to_ptr("%3", "i32");
+                string r5 = get_addr_to_int32("@" ~ return_procedure, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
+                add_output_line("store i32 " ~ r5 ~ ", i32* " ~ r4 ~ ", align 4");
+
+                add_output_line("store i8*(%_cpu*)* %proc, i8*(%_cpu*)** %tproc" ~ aligntproc);
                 add_output_line("br label %l_1");
 
                 add_output_line("l_1:");
-                add_output_line("%6 = load " ~ get_load_type("i8*(%_cpu*)*") ~ " %tproc, align 4");
-                add_output_line("%7 = call fastcc i8* %6(%_cpu* %cpu) nounwind");
-                add_output_line("%8 = bitcast i8* %7 to i8*(%_cpu*)*");
-                add_output_line("store i8*(%_cpu*)* %8, i8*(%_cpu*)** %tproc, align 4");
-                add_output_line("%9 = icmp eq i8* %7, null");
-                add_output_line("br i1 %9, label %l_2, label %l_1");
+                string r6 = get_new_temporary_register();
+                string r7 = get_new_temporary_register();
+                string r8 = get_new_temporary_register();
+                string r9 = get_new_temporary_register();
+                add_output_line(r6 ~ " = load " ~ get_load_type("i8*(%_cpu*)*") ~ " %tproc" ~ aligntproc);
+                add_output_line(r7 ~ " = call fastcc i8* " ~ r6 ~ "(%_cpu* %cpu) nounwind");
+                add_output_line(r8 ~ " = bitcast i8* " ~ r7 ~ " to i8*(%_cpu*)*");
+                add_output_line("store i8*(%_cpu*)* " ~ r8 ~ ", i8*(%_cpu*)** %tproc" ~ aligntproc);
+                add_output_line(r9 ~ " = icmp eq i8* " ~ r7 ~ ", null");
+                add_output_line("br i1 " ~ r9 ~ ", label %l_2, label %l_1");
                 add_output_line("l_2:");
 
                 add_output_line("ret void");
                 add_output_line("}");
             }
 
-            add_output_line("define ccc void @" ~ proc.global_name ~ "(%_cpu* %cpu) nounwind {");
+            add_output_line("define protected ccc void @" ~ proc.global_name ~ "(%_cpu* %cpu) nounwind {");
 
             if (no_tail_calls)
             {
@@ -5008,9 +5283,16 @@ public int main(string[] args)
                 add_output_line("%3 = sub i32 %2, 4");
                 add_output_line("store i32 %3, i32* %1, align 4");
 
-                add_output_line("%4 = inttoptr i32 %3 to i32*");
-                add_output_line("%5 = ptrtoint " ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ return_procedure ~ " to i32");
-                add_output_line("store i32 %5, i32* %4, align 4");
+                procedure_optimization_level = 2;
+                temporary_register_index = 3;
+                for (int i = 0; i < num_regs64; i++)
+                {
+                    register64_state[i] = RegisterState.Empty;
+                }
+
+                string r4 = get_int32_to_ptr("%3", "i32");
+                string r5 = get_addr_to_int32("@" ~ return_procedure, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
+                add_output_line("store i32 " ~ r5 ~ ", i32* " ~ r4 ~ ", align 4");
 
                 add_output_line("call fastcc void @" ~ proc_name ~ "(%_cpu* %cpu) nounwind");
             }
@@ -5020,6 +5302,13 @@ public int main(string[] args)
         }
     }
 
+    if (pointers_with_offset)
+    {
+        add_output_line("");
+        add_output_line("; pointer initialization");
+        add_output_line("@ptr_initialize_pointers = common global void(i64)* null, align 8");
+    }
+
     if (create_ctor_function)
     {
         add_output_line("");
@@ -5027,7 +5316,24 @@ public int main(string[] args)
         add_output_line("%_ctors = type { i32, void ()*, i8* }");
         add_output_line("@llvm.global_ctors = appending global [1 x %_ctors] [%_ctors { i32 65535, void ()* @__ctor, i8* null }]");
         add_output_line("");
-        add_output_line("define private void @__ctor() nounwind {");
+        if (pointers_with_offset)
+        {
+            add_output_line("@ptr_prev_init_pointers = private global void(i64)* null, align 8");
+            add_output_line("");
+            add_output_line("define private ccc void @initialize_pointers(i64 %ptrofs) nounwind {");
+            add_output_line("%1 = trunc i64 %ptrofs to i32");
+
+            procedure_optimization_level = 2;
+            temporary_register_index = 1;
+            for (int i = 0; i < num_regs64; i++)
+            {
+                register64_state[i] = RegisterState.Empty;
+            }
+        }
+        else
+        {
+            add_output_line("define private void @__ctor() nounwind {");
+        }
 
         foreach (dataseg_name; dataseg_list.keys.sort())
         {
@@ -5067,12 +5373,40 @@ public int main(string[] args)
 
                 int align_value = (dataseg_offset % 4 == 0)?4:( (dataseg_offset % 2 == 0)?2:1 );
 
-                add_output_line("store i32 " ~ store_value ~ ", i32* " ~ ptr_value ~ ", align " ~ to!string(align_value));
+                if (pointers_with_offset)
+                {
+                    string r1 = get_new_temporary_register();
+                    add_output_line(r1 ~ " = sub i32 " ~ store_value ~ ", %1");
+                    add_output_line("store i32 " ~ r1 ~ ", i32* " ~ ptr_value ~ ", align " ~ to!string(align_value));
+                }
+                else
+                {
+                    add_output_line("store i32 " ~ store_value ~ ", i32* " ~ ptr_value ~ ", align " ~ to!string(align_value));
+                }
 
                 dataseg_offset += 4;
             }
         }
 
+        if (pointers_with_offset)
+        {
+            string r2 = get_new_temporary_register();
+            string r3 = get_new_temporary_register();
+            add_output_line(r2 ~ " = load void(i64)*, void(i64)** @ptr_prev_init_pointers, align 8");
+            add_output_line(r3 ~ " = icmp eq void(i64)* " ~ r2 ~ ", null");
+            add_output_line("br i1 " ~ r3 ~ ", label %l_2, label %l_1");
+            add_output_line("l_1:");
+            add_output_line("tail call ccc void " ~ r2 ~ "(i64 %ptrofs) nounwind");
+            add_output_line("ret void");
+            add_output_line("l_2:");
+            add_output_line("ret void");
+            add_output_line("}");
+            add_output_line("");
+            add_output_line("define private void @__ctor() nounwind {");
+            add_output_line("%1 = load void(i64)*, void(i64)** @ptr_initialize_pointers, align 8");
+            add_output_line("store void(i64)* %1, void(i64)** @ptr_prev_init_pointers, align 8");
+            add_output_line("store void(i64)* @initialize_pointers, void(i64)** @ptr_initialize_pointers, align 8");
+        }
         add_output_line("ret void");
         add_output_line("}");
     }

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -23,8 +23,13 @@
  */
 
 #include <stdlib.h>
+#if !(defined(__GNUC__) && defined(_WIN64))
 #include <setjmp.h>
-#include "../Game_defs.h"
+#if defined(_MSC_VER) && defined(_WIN64)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#endif
 #include "llasm_cpu.h"
 
 #ifdef __cplusplus
@@ -34,42 +39,82 @@ extern "C" {
 extern _cpu *x86_initialize_cpu(void);
 extern void x86_deinitialize_cpu(void);
 
-extern void c_main_(CPU);
-extern void c_update_timer(CPU);
+extern void CCALL c_main_(CPU);
+extern void CCALL c_update_timer(CPU);
 
-extern void c_loc_8B6BB(CPU);
+extern void CCALL c_loc_8B6BB(CPU);
 
-extern void c_RunProcECX(CPU);
+extern void CCALL c_RunProcECX(CPU);
 
 #ifdef __cplusplus
 }
 #endif
 
-extern uint32_t X86_InterruptFlag;
-extern void *Game_MouseTable[8];
-extern uint32_t mouse_pos[2];
-extern uint16_t mouse_old_pos[9];
+EXTERNCVAR uint32_t X86_InterruptFlag;
+extern uint32_t Game_MouseTable[8];
+EXTERNCVAR uint32_t mouse_pos[2];
+EXTERNCVAR uint16_t mouse_old_pos[9];
 
+#if defined(__GNUC__) && defined(_WIN64)
+static intptr_t exit_env[5];
+#else
 static jmp_buf exit_env;
+#if defined(_MSC_VER) && defined(_WIN64)
+static int (*dyn_intrinsic_setjmp)(jmp_buf, void *);
+static void (*dyn_longjmp)(jmp_buf, int);
+#endif
+#endif
 
 static int main_return_value;
 
 
-EXTERNC void Game_ExitMain_Asm(int32_t status)
+EXTERNC void CCALL Game_ExitMain_Asm(int32_t status)
 {
     main_return_value = status;
+#if defined(__GNUC__) && defined(_WIN64)
+    __builtin_longjmp(exit_env, 1);
+#elif defined(_MSC_VER) && defined(_WIN64)
+    (dyn_longjmp != NULL) ? dyn_longjmp(exit_env, 1) : longjmp(exit_env, 1);
+#else
     longjmp(exit_env, 1);
+#endif
 }
 
-void Game_StopMain_Asm(void)
+void CCALL Game_StopMain_Asm(void)
 {
     main_return_value = 1;
+#if defined(__GNUC__) && defined(_WIN64)
+    __builtin_longjmp(exit_env, 1);
+#elif defined(_MSC_VER) && defined(_WIN64)
+    (dyn_longjmp != NULL) ? dyn_longjmp(exit_env, 1) : longjmp(exit_env, 1);
+#else
     longjmp(exit_env, 1);
+#endif
 }
 
-int Game_Main_Asm(int argc, PTR32(char) argv[])
+int CCALL Game_Main_Asm(int argc, char *argv[])
 {
+#if defined(__GNUC__) && defined(_WIN64)
+    if (__builtin_setjmp(exit_env) == 0)
+#elif defined(_MSC_VER) && defined(_WIN64)
+    HMODULE hLib;
+
+    hLib = GetModuleHandleW(L"ucrtbase.dll");
+    if (hLib != NULL)
+    {
+        dyn_intrinsic_setjmp = (int (*)(jmp_buf, void *))GetProcAddress(hLib, "__intrinsic_setjmp");
+        dyn_longjmp = (void (*)(jmp_buf, int))GetProcAddress(hLib, "longjmp");
+    }
+    if (hLib == NULL || dyn_intrinsic_setjmp == NULL || dyn_longjmp == NULL)
+    {
+        dyn_intrinsic_setjmp = NULL;
+        dyn_longjmp = NULL;
+    }
+
+    if (((dyn_intrinsic_setjmp != NULL) ? dyn_intrinsic_setjmp(exit_env, NULL) : setjmp(exit_env)) == 0)
+#else
     if (setjmp(exit_env) == 0)
+#endif
     {
         _cpu *cpu;
         int retval;
@@ -77,7 +122,7 @@ int Game_Main_Asm(int argc, PTR32(char) argv[])
         cpu = x86_initialize_cpu();
 
         eax = argc;
-        edx = (uintptr_t)argv;
+        edx = PTR2REG(argv);
 
         c_main_(cpu);
 
@@ -95,7 +140,7 @@ int Game_Main_Asm(int argc, PTR32(char) argv[])
     }
 }
 
-void Game_RunTimer_Asm(void)
+void CCALL Game_RunTimer_Asm(void)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_ebp, old_esi, old_edi;
@@ -127,7 +172,7 @@ void Game_RunTimer_Asm(void)
 }
 
 
-EXTERNC void *sub_8B6BB(void *handle)
+EXTERNC void * CCALL sub_8B6BB(void *handle)
 {
     _cpu *cpu;
 
@@ -135,7 +180,7 @@ EXTERNC void *sub_8B6BB(void *handle)
 
     // ebx, ecx, edx, esi, edi, ebp are saved in the called function
 
-    eax = (uintptr_t)handle;
+    eax = PTR2REG(handle);
 
     c_loc_8B6BB(cpu);
 
@@ -143,13 +188,13 @@ EXTERNC void *sub_8B6BB(void *handle)
 }
 
 
-uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
+uint32_t CCALL Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
     uint32_t old_InterruptFlag, old_eflags;
 
-    if (Game_MouseTable[0] == NULL)
+    if (Game_MouseTable[0] == 0)
     {
         return 1;
     }
@@ -179,7 +224,7 @@ uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
     esp -= 4;
     *((uint32_t *)REG2PTR(esp)) = 0;    // emulate far call
 
-    ecx = (uintptr_t)Game_MouseTable[0];
+    ecx = Game_MouseTable[0];
     c_RunProcECX(cpu);
 
     eax = old_eax;
@@ -196,13 +241,13 @@ uint32_t Game_MouseMove(uint32_t state, uint32_t x, uint32_t y)
     return 0;
 }
 
-uint32_t Game_MouseButton(uint32_t state, uint32_t action)
+uint32_t CCALL Game_MouseButton(uint32_t state, uint32_t action)
 {
     _cpu *cpu;
     uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
     uint32_t old_InterruptFlag, old_eflags;
 
-    if (Game_MouseTable[action] == NULL)
+    if (Game_MouseTable[action] == 0)
     {
         return 1;
     }
@@ -229,7 +274,7 @@ uint32_t Game_MouseButton(uint32_t state, uint32_t action)
     esp -= 4;
     *((uint32_t *)REG2PTR(esp)) = 0;    // emulate far call
 
-    ecx = (uintptr_t)Game_MouseTable[action];
+    ecx = Game_MouseTable[action];
     c_RunProcECX(cpu);
 
     eax = old_eax;
@@ -246,7 +291,7 @@ uint32_t Game_MouseButton(uint32_t state, uint32_t action)
     return 0;
 }
 
-EXTERNC uint32_t Game_RunProcReg1_Asm(void *proc_addr, const char *proc_param1)
+EXTERNC uint32_t CCALL Game_RunProcReg1_Asm(void *proc_addr, const char *proc_param1)
 {
     _cpu *cpu;
     uint32_t old_ecx;
@@ -256,9 +301,9 @@ EXTERNC uint32_t Game_RunProcReg1_Asm(void *proc_addr, const char *proc_param1)
     // ebx, ecx, edx, esi, edi, ebp are saved in the called function
     old_ecx = ecx;
 
-    eax = (uintptr_t)proc_param1;
+    eax = PTR2REG(proc_param1);
 
-    ecx = (uintptr_t)proc_addr;
+    ecx = PTR2REG(proc_addr);
     c_RunProcECX(cpu);
 
     ecx = old_ecx;
@@ -266,7 +311,7 @@ EXTERNC uint32_t Game_RunProcReg1_Asm(void *proc_addr, const char *proc_param1)
     return eax;
 }
 
-EXTERNC uint32_t Game_RunProcReg2_Asm(void *proc_addr, const char *proc_param1, const uint8_t *proc_param2)
+EXTERNC uint32_t CCALL Game_RunProcReg2_Asm(void *proc_addr, const char *proc_param1, const uint8_t *proc_param2)
 {
     _cpu *cpu;
     uint32_t old_ecx;
@@ -276,10 +321,10 @@ EXTERNC uint32_t Game_RunProcReg2_Asm(void *proc_addr, const char *proc_param1, 
     // ebx, ecx, esi, edi, ebp are saved in the called function
     old_ecx = ecx;
 
-    eax = (uintptr_t)proc_param1;
-    edx = (uintptr_t)proc_param2;
+    eax = PTR2REG(proc_param1);
+    edx = PTR2REG(proc_param2);
 
-    ecx = (uintptr_t)proc_addr;
+    ecx = PTR2REG(proc_addr);
     c_RunProcECX(cpu);
 
     ecx = old_ecx;

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,14 +24,13 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-int2.h"
 #include "Albion-int3.h"
 #include "Game_thread.h"
 #include "Game-int2.h"
 
-uint32_t Game_int386x(
+uint32_t CCALL Game_int386x(
     const uint32_t IntNum,
     const Game_REGS *in_regs,
     Game_REGS *out_regs,
@@ -66,11 +65,7 @@ uint32_t Game_int386x(
 #if defined(__DEBUG__)
                     fprintf(stderr, "Setting text mode\n");
 #endif
-                #if SDL_VERSION_ATLEAST(2,0,0)
                     if (Game_Window != NULL)
-                #else
-                    if (Game_Screen != NULL)
-                #endif
                     {
                         event.type = SDL_USEREVENT;
                         event.user.code = EC_DISPLAY_DESTROY;
@@ -95,11 +90,7 @@ uint32_t Game_int386x(
 #endif
                     if (BX == 0x0157)
                     {
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window != NULL)
-                    #else
-                        if (Game_Screen != NULL)
-                    #endif
                         {
                             event.type = SDL_USEREVENT;
                             event.user.code = EC_DISPLAY_DESTROY;
@@ -120,11 +111,7 @@ uint32_t Game_int386x(
 
                         SDL_SemWait(Game_DisplaySem);
 
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window == NULL)
-                    #else
-                        if (Game_Screen == NULL)
-                    #endif
                         {
 #if defined(__DEBUG__)
                             fprintf (stderr, "Error: Couldn't set video mode\n");
@@ -136,11 +123,7 @@ uint32_t Game_int386x(
                     }
                     else if (BX == 3)
                     {
-                    #if SDL_VERSION_ATLEAST(2,0,0)
                         if (Game_Window != NULL)
-                    #else
-                        if (Game_Screen != NULL)
-                    #endif
                         {
                             event.type = SDL_USEREVENT;
                             event.user.code = EC_DISPLAY_DESTROY;
@@ -345,7 +328,7 @@ uint32_t Game_int386x(
                     }
                     else
                     {
-                        ECX = (uintptr_t) Game_AllocateMemory((uint32_t) BX << 4);
+                        PTR_ECX = Game_AllocateMemory((uint32_t) BX << 4);
                         if (ECX)
                         {
 #if defined(__DEBUG__)
@@ -393,7 +376,7 @@ uint32_t Game_int386x(
 #if defined(__DEBUG__)
                             fprintf(stderr, "Running Original Interrupt...\n");
 #endif
-                            Game_intDPMI(BL, (Game_DPMIREGS *)(uintptr_t) EDI);
+                            Game_intDPMI(BL, (Game_DPMIREGS *)(void *) PTR_EDI);
                         }
                         else
                         {
@@ -422,8 +405,8 @@ uint32_t Game_int386x(
                     // case 0x0400:
                 case 0x0500:
                 // GET FREE MEMORY INFORMATION
-                    memset((void *)(uintptr_t) EDI, -1, 0x30);
-                    *((uint32_t *)(uintptr_t)EDI) = GAME_MAX_FREE_MEMORY;
+                    memset((void *)PTR_EDI, -1, 0x30);
+                    *((uint32_t *)(void *)PTR_EDI) = GAME_MAX_FREE_MEMORY;
 
                     CLEAR_FLAG(CARRY_FLAG);
 
@@ -434,7 +417,7 @@ uint32_t Game_int386x(
 #if defined(__DEBUG__)
                     fprintf(stderr, "Allocating Memory Block: %i\n", ((uint32_t) BX << 16) + CX);
 #endif
-                    ECX = (uintptr_t) Game_AllocateMemory(((uint32_t) BX << 16) + CX);
+                    PTR_ECX = Game_AllocateMemory(((uint32_t) BX << 16) + CX);
                     if (ECX)
                     {
 #if defined(__DEBUG__)
@@ -455,7 +438,9 @@ uint32_t Game_int386x(
                     // case 0x0501:
                 case 0x0502:
                 // Free Memory Block
-                    Game_FreeMemory((void *)(uintptr_t) (((uint32_t) SI << 16) + DI));
+                    EAX = ((uint32_t) SI << 16) + DI;
+                    Game_FreeMemory((void *)PTR_EAX);
+                    EAX = 0;
 
                     CLEAR_FLAG(CARRY_FLAG);
 
@@ -501,7 +486,7 @@ uint32_t Game_int386x(
 
                         for (i = 0; i < 8; i++)
                         {
-                            Game_MouseTable[i] = NULL;
+                            Game_MouseTable[i] = 0;
                         }
                     }
 
@@ -520,7 +505,7 @@ uint32_t Game_int386x(
                         {
                             if (mask & 1)
                             {
-                                Game_MouseTable[i] = (void *)(uintptr_t)EDX;
+                                Game_MouseTable[i] = EDX;
                             }
                             mask = mask >> 1;
                         }
@@ -535,7 +520,7 @@ uint32_t Game_int386x(
             // case 0x33:
         default:
             Game_StopMain();
-    } // switch (inter_no)
+    } // switch (IntNum)
 
     // just in case *out_regs is not properly aligned
     memcpy((void *)out_regs, &tmp_regs, sizeof(Game_REGS));

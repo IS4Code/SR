@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2024 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,13 +22,16 @@
  *
  */
 
+#ifdef DEBUG_DSOUND
 #include <inttypes.h>
+#endif
 #include <SDL.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "WinApi-dsound.h"
 #include "Game-Config.h"
+#include "Game-Memory.h"
 #ifdef USE_SPEEXDSP_RESAMPLER
 #include <speex/speex_resampler.h>
 #endif
@@ -118,9 +121,7 @@ struct IDirectSoundBuffer_c {
             unsigned int num_channels;
             int16_t *conv_data;
             int32_t *accum_data;
-#if SDL_VERSION_ATLEAST(2,0,0)
             SDL_AudioDeviceID device_id;
-#endif
         };
         struct {
             struct IDirectSoundBuffer_c *next;
@@ -140,7 +141,7 @@ struct IDirectSoundBuffer_c {
 
 
 #pragma pack(2)
-typedef struct __attribute__ ((__packed__)) twaveformatex {
+typedef struct PACKED twaveformatex {
     uint16_t wFormatTag;
     uint16_t nChannels;
     uint32_t nSamplesPerSec;
@@ -451,7 +452,7 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
                 needed_samples = ((num_samples * (int64_t)current->resample_step) >> 16) + 4 + (current->resample_step >> 16);
 
                 old_buffer = current->resample_buffer;
-                current->resample_buffer = (int16_t *)realloc(old_buffer, needed_samples * 2 * sizeof(int16_t));
+                current->resample_buffer = (int16_t *)realloc(current->resample_buffer, needed_samples * 2 * sizeof(int16_t));
                 if (current->resample_buffer == NULL)
                 {
                     if (old_buffer != NULL)
@@ -1050,7 +1051,7 @@ static void fill_audio(void *udata, Uint8 *stream, int len)
 }
 
 
-uint32_t DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, void *pUnkOuter)
+uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, void *pUnkOuter)
 {
     struct IDirectSound_c *lpDS_c;
 
@@ -1069,7 +1070,7 @@ uint32_t DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, v
         exit(1);
     }
 
-    lpDS_c = (struct IDirectSound_c *)malloc(sizeof(struct IDirectSound_c));
+    lpDS_c = (struct IDirectSound_c *)x86_malloc(sizeof(struct IDirectSound_c));
 
     if (lpDS_c == NULL)
     {
@@ -1090,7 +1091,7 @@ uint32_t DirectSoundCreate_c(void *lpGuid, PTR32(struct IDirectSound_c) *ppDS, v
 }
 
 
-uint32_t IDirectSound_QueryInterface_c(struct IDirectSound_c *lpThis, void * riid, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectSound_QueryInterface_c(struct IDirectSound_c *lpThis, void * riid, PTR32(void)* ppvObj)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSound_QueryInterface: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)riid, (uintptr_t)ppvObj);
@@ -1100,7 +1101,7 @@ uint32_t IDirectSound_QueryInterface_c(struct IDirectSound_c *lpThis, void * rii
     return E_NOINTERFACE;
 }
 
-uint32_t IDirectSound_AddRef_c(struct IDirectSound_c *lpThis)
+uint32_t CCALL IDirectSound_AddRef_c(struct IDirectSound_c *lpThis)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSound_AddRef: 0x%" PRIxPTR " - ", (uintptr_t)lpThis);
@@ -1122,7 +1123,7 @@ uint32_t IDirectSound_AddRef_c(struct IDirectSound_c *lpThis)
     return 0;
 }
 
-uint32_t IDirectSound_Release_c(struct IDirectSound_c *lpThis)
+uint32_t CCALL IDirectSound_Release_c(struct IDirectSound_c *lpThis)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSound_Release: 0x%" PRIxPTR " - ", (uintptr_t)lpThis);
@@ -1147,7 +1148,7 @@ uint32_t IDirectSound_Release_c(struct IDirectSound_c *lpThis)
             StopPrimaryBuffer(lpThis->PrimaryBuffer);
             lpThis->PrimaryBuffer = NULL;
         }
-        free(lpThis);
+        x86_free(lpThis);
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return 0;
     }
@@ -1209,7 +1210,7 @@ static void RecalculateConvFormat(struct IDirectSoundBuffer_c *lpThis)
     }
 }
 
-uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const struct _dsbufferdesc * pcDSBufferDesc, PTR32(struct IDirectSoundBuffer_c)* ppDSBuffer, void * pUnkOuter)
+uint32_t CCALL IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const struct _dsbufferdesc * pcDSBufferDesc, PTR32(struct IDirectSoundBuffer_c)* ppDSBuffer, void * pUnkOuter)
 {
     struct IDirectSoundBuffer_c *lpDSB_c;
     SDL_AudioSpec desired, obtained;
@@ -1241,7 +1242,7 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
             return DSERR_INVALIDPARAM;
         }
 
-        lpDSB_c = (struct IDirectSoundBuffer_c *) malloc(sizeof(struct IDirectSoundBuffer_c));
+        lpDSB_c = (struct IDirectSoundBuffer_c *) x86_malloc(sizeof(struct IDirectSoundBuffer_c));
 
         if (lpDSB_c == NULL)
         {
@@ -1269,14 +1270,10 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
         desired.callback = &fill_audio;
         desired.userdata = lpDSB_c;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
         lpDSB_c->device_id = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
         if (lpDSB_c->device_id == 0)
-#else
-        if (0 != SDL_OpenAudio(&desired, &obtained))
-#endif
         {
-            free(lpDSB_c);
+            x86_free(lpDSB_c);
 
 #ifdef DEBUG_DSOUND
             eprintf("SDL error\n");
@@ -1286,7 +1283,6 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
 
         if ((obtained.channels > 2) || ((obtained.size / (obtained.samples * obtained.channels)) > 2))
         {
-#if SDL_VERSION_ATLEAST(2,0,0)
             SDL_CloseAudioDevice(lpDSB_c->device_id);
 
             lpDSB_c->device_id = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
@@ -1295,16 +1291,8 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
                 #endif
             );
             if (lpDSB_c->device_id == 0)
-#else
-            SDL_CloseAudio();
-            if (0 == SDL_OpenAudio(&desired, NULL))
             {
-                obtained = desired;
-            }
-            else
-#endif
-            {
-                free(lpDSB_c);
+                x86_free(lpDSB_c);
 
 #ifdef DEBUG_DSOUND
                 eprintf("SDL error\n");
@@ -1330,14 +1318,10 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
         {
             if (lpDSB_c->conv_data != NULL) free(lpDSB_c->conv_data);
             if (lpDSB_c->accum_data != NULL) free(lpDSB_c->accum_data);
-#if SDL_VERSION_ATLEAST(2,0,0)
             SDL_CloseAudioDevice(lpDSB_c->device_id);
             lpDSB_c->device_id = 0;
-#else
-            SDL_CloseAudio();
-#endif
 
-            free(lpDSB_c);
+            x86_free(lpDSB_c);
 
 #ifdef DEBUG_DSOUND
             eprintf("error\n");
@@ -1384,7 +1368,7 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
         }
 
 
-        lpDSB_c = (struct IDirectSoundBuffer_c *) malloc(sizeof(struct IDirectSoundBuffer_c));
+        lpDSB_c = (struct IDirectSoundBuffer_c *) x86_malloc(sizeof(struct IDirectSoundBuffer_c));
 
         if (lpDSB_c == NULL)
         {
@@ -1404,7 +1388,7 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
 
         lpDSB_c->freq = lpwfxFormat->nSamplesPerSec;
         lpDSB_c->format = (lpwfxFormat->wBitsPerSample == 16)?AUDIO_S16LSB:AUDIO_U8;
-        lpDSB_c->channels = lpwfxFormat->nChannels;
+        lpDSB_c->channels = (uint8_t)lpwfxFormat->nChannels;
         lpDSB_c->silence = (lpwfxFormat->wBitsPerSample == 16)?0:0x80;
         lpDSB_c->attenuation = 0;
         lpDSB_c->pan = 0;
@@ -1416,10 +1400,10 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
 
         RecalculateConvFormat(lpDSB_c);
 
-        lpDSB_c->data = (uint8_t *)malloc(pcDSBufferDesc->dwBufferBytes + 4); // allocate 4 more bytes to allow reading past the end of buffer
+        lpDSB_c->data = (uint8_t *)x86_malloc(pcDSBufferDesc->dwBufferBytes + 4); // allocate 4 more bytes to allow reading past the end of buffer
         if (lpDSB_c->data == NULL)
         {
-            free(lpDSB_c);
+            x86_free(lpDSB_c);
 #ifdef DEBUG_DSOUND
             eprintf("error\n");
 #endif
@@ -1453,19 +1437,19 @@ uint32_t IDirectSound_CreateSoundBuffer_c(struct IDirectSound_c *lpThis, const s
     exit(1);
 }
 
-uint32_t IDirectSound_GetCaps_c(struct IDirectSound_c *lpThis, void * pDSCaps)
+uint32_t CCALL IDirectSound_GetCaps_c(struct IDirectSound_c *lpThis, void * pDSCaps)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_GetCaps");
     exit(1);
 }
 
-uint32_t IDirectSound_DuplicateSoundBuffer_c(struct IDirectSound_c *lpThis, struct IDirectSoundBuffer_c * pDSBufferOriginal, PTR32(struct IDirectSoundBuffer_c)* ppDSBufferDuplicate)
+uint32_t CCALL IDirectSound_DuplicateSoundBuffer_c(struct IDirectSound_c *lpThis, struct IDirectSoundBuffer_c * pDSBufferOriginal, PTR32(struct IDirectSoundBuffer_c)* ppDSBufferDuplicate)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_DuplicateSoundBuffer");
     exit(1);
 }
 
-uint32_t IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis, void * hwnd, uint32_t dwLevel)
+uint32_t CCALL IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis, void * hwnd, uint32_t dwLevel)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSound_SetCooperativeLevel: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%x - ", (uintptr_t)lpThis, (uintptr_t)hwnd, dwLevel);
@@ -1491,32 +1475,32 @@ uint32_t IDirectSound_SetCooperativeLevel_c(struct IDirectSound_c *lpThis, void 
     return DS_OK;
 }
 
-uint32_t IDirectSound_Compact_c(struct IDirectSound_c *lpThis)
+uint32_t CCALL IDirectSound_Compact_c(struct IDirectSound_c *lpThis)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_Compact");
     exit(1);
 }
 
-uint32_t IDirectSound_GetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t * pdwSpeakerConfig)
+uint32_t CCALL IDirectSound_GetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t * pdwSpeakerConfig)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_GetSpeakerConfig");
     exit(1);
 }
 
-uint32_t IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t dwSpeakerConfig)
+uint32_t CCALL IDirectSound_SetSpeakerConfig_c(struct IDirectSound_c *lpThis, uint32_t dwSpeakerConfig)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_SetSpeakerConfig");
     exit(1);
 }
 
-uint32_t IDirectSound_Initialize_c(struct IDirectSound_c *lpThis, const void * pcGuidDevice)
+uint32_t CCALL IDirectSound_Initialize_c(struct IDirectSound_c *lpThis, const void * pcGuidDevice)
 {
     eprintf("Unsupported method: %s\n", "IDirectSound_Initialize");
     exit(1);
 }
 
 
-uint32_t IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c *lpThis, void * riid, PTR32(void)* ppvObj)
+uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c *lpThis, void * riid, PTR32(void)* ppvObj)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_QueryInterface: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR "\n", (uintptr_t)lpThis, (uintptr_t)riid, (uintptr_t)ppvObj);
@@ -1526,7 +1510,7 @@ uint32_t IDirectSoundBuffer_QueryInterface_c(struct IDirectSoundBuffer_c *lpThis
     return E_NOINTERFACE;
 }
 
-uint32_t IDirectSoundBuffer_AddRef_c(struct IDirectSoundBuffer_c *lpThis)
+uint32_t CCALL IDirectSoundBuffer_AddRef_c(struct IDirectSoundBuffer_c *lpThis)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_AddRef: 0x%" PRIxPTR " - ", (uintptr_t)lpThis);
@@ -1554,24 +1538,14 @@ static void StopPrimaryBuffer(struct IDirectSoundBuffer_c *lpThis)
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_LockAudioDevice(lpThis->device_id);
         SDL_PauseAudioDevice(lpThis->device_id, 1);
         SDL_UnlockAudioDevice(lpThis->device_id);
-#else
-        SDL_LockAudio();
-        SDL_PauseAudio(1);
-        SDL_UnlockAudio();
-#endif
         lpThis->status = SDL_AUDIO_STOPPED;
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_CloseAudioDevice(lpThis->device_id);
     lpThis->device_id = 0;
-#else
-    SDL_CloseAudio();
-#endif
 
     current = lpThis->first;
     while (current != NULL)
@@ -1589,7 +1563,7 @@ static void StopPrimaryBuffer(struct IDirectSoundBuffer_c *lpThis)
     lpThis->num_channels = 0;
 }
 
-uint32_t IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
+uint32_t CCALL IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_Release: 0x%" PRIxPTR " - ", (uintptr_t)lpThis);
@@ -1632,24 +1606,16 @@ uint32_t IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
 
                 PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
                 SDL_LockAudioDevice(PrimaryBuffer->device_id);
-#else
-                SDL_LockAudio();
-#endif
 
                 remove_from_list(PrimaryBuffer, lpThis, 1);
 
-#if SDL_VERSION_ATLEAST(2,0,0)
                 SDL_UnlockAudioDevice(PrimaryBuffer->device_id);
-#else
-                SDL_UnlockAudio();
-#endif
             }
 
             if (lpThis->data != NULL)
             {
-                free(lpThis->data);
+                x86_free(lpThis->data);
                 lpThis->data = NULL;
             }
             if (lpThis->resample_buffer != NULL)
@@ -1665,19 +1631,19 @@ uint32_t IDirectSoundBuffer_Release_c(struct IDirectSoundBuffer_c *lpThis)
             }
 #endif
         }
-        free(lpThis);
+        x86_free(lpThis);
         return 0;
     }
     return lpThis->RefCount;
 }
 
-uint32_t IDirectSoundBuffer_GetCaps_c(struct IDirectSoundBuffer_c *lpThis, void * pDSBufferCaps)
+uint32_t CCALL IDirectSoundBuffer_GetCaps_c(struct IDirectSoundBuffer_c *lpThis, void * pDSBufferCaps)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetCaps");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwCurrentPlayCursor, uint32_t * pdwCurrentWriteCursor)
+uint32_t CCALL IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwCurrentPlayCursor, uint32_t * pdwCurrentWriteCursor)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_GetCurrentPosition: 0x%" PRIxPTR ", 0x%" PRIxPTR ", 0x%" PRIxPTR " - ", (uintptr_t) lpThis, (uintptr_t) pdwCurrentPlayCursor, (uintptr_t) pdwCurrentWriteCursor);
@@ -1715,43 +1681,43 @@ uint32_t IDirectSoundBuffer_GetCurrentPosition_c(struct IDirectSoundBuffer_c *lp
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_GetFormat_c(struct IDirectSoundBuffer_c *lpThis, void * pwfxFormat, uint32_t dwSizeAllocated, uint32_t * pdwSizeWritten)
+uint32_t CCALL IDirectSoundBuffer_GetFormat_c(struct IDirectSoundBuffer_c *lpThis, void * pwfxFormat, uint32_t dwSizeAllocated, uint32_t * pdwSizeWritten)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetFormat");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_GetVolume_c(struct IDirectSoundBuffer_c *lpThis, int32_t * plVolume)
+uint32_t CCALL IDirectSoundBuffer_GetVolume_c(struct IDirectSoundBuffer_c *lpThis, int32_t * plVolume)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetVolume");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_GetPan_c(struct IDirectSoundBuffer_c *lpThis, int32_t * plPan)
+uint32_t CCALL IDirectSoundBuffer_GetPan_c(struct IDirectSoundBuffer_c *lpThis, int32_t * plPan)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetPan");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_GetFrequency_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwFrequency)
+uint32_t CCALL IDirectSoundBuffer_GetFrequency_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwFrequency)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetFrequency");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_GetStatus_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwStatus)
+uint32_t CCALL IDirectSoundBuffer_GetStatus_c(struct IDirectSoundBuffer_c *lpThis, uint32_t * pdwStatus)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_GetStatus");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_Initialize_c(struct IDirectSoundBuffer_c *lpThis, struct IDirectSound_c * pDirectSound, const void * pcDSBufferDesc)
+uint32_t CCALL IDirectSoundBuffer_Initialize_c(struct IDirectSoundBuffer_c *lpThis, struct IDirectSound_c * pDirectSound, const void * pcDSBufferDesc)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_Initialize");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_Lock_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwOffset, uint32_t dwBytes, PTR32(void)* ppvAudioPtr1, uint32_t * pdwAudioBytes1, PTR32(void)* ppvAudioPtr2, uint32_t * pdwAudioBytes2, uint32_t dwFlags)
+uint32_t CCALL IDirectSoundBuffer_Lock_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwOffset, uint32_t dwBytes, PTR32(void)* ppvAudioPtr1, uint32_t * pdwAudioBytes1, PTR32(void)* ppvAudioPtr2, uint32_t * pdwAudioBytes2, uint32_t dwFlags)
 {
     uint32_t locked_size;
 #ifdef DEBUG_DSOUND
@@ -1826,7 +1792,7 @@ uint32_t IDirectSoundBuffer_Lock_c(struct IDirectSoundBuffer_c *lpThis, uint32_t
         return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwReserved1, uint32_t dwReserved2, uint32_t dwFlags)
+uint32_t CCALL IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwReserved1, uint32_t dwReserved2, uint32_t dwFlags)
 {
     struct IDirectSoundBuffer_c *PrimaryBuffer;
 
@@ -1854,11 +1820,7 @@ uint32_t IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t
 
         lpThis->status = SDL_AUDIO_PLAYING;
         lpThis->looping = 1;
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_PauseAudioDevice(lpThis->device_id, 0);
-#else
-        SDL_PauseAudio(0);
-#endif
 
 #ifdef DEBUG_DSOUND
         eprintf("OK\n");
@@ -1868,11 +1830,7 @@ uint32_t IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t
 
     PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_LockAudioDevice(PrimaryBuffer->device_id);
-#else
-    SDL_LockAudio();
-#endif
 
     lpThis->looping = (dwFlags & DSBPLAY_LOOPING)?1:0;
     if (lpThis->status != SDL_AUDIO_PLAYING)
@@ -1900,11 +1858,7 @@ uint32_t IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t
         }
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_UnlockAudioDevice(PrimaryBuffer->device_id);
-#else
-    SDL_UnlockAudio();
-#endif
 
 #ifdef DEBUG_DSOUND
     eprintf("OK\n");
@@ -1912,13 +1866,13 @@ uint32_t IDirectSoundBuffer_Play_c(struct IDirectSoundBuffer_c *lpThis, uint32_t
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_SetCurrentPosition_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwNewPosition)
+uint32_t CCALL IDirectSoundBuffer_SetCurrentPosition_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwNewPosition)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_SetCurrentPosition");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, const struct twaveformatex * pcfxFormat)
+uint32_t CCALL IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, const struct twaveformatex * pcfxFormat)
 {
     SDL_AudioSpec desired, obtained;
 
@@ -1961,7 +1915,7 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
 
     desired.freq = pcfxFormat->nSamplesPerSec;
     desired.format = (pcfxFormat->wBitsPerSample == 16)?AUDIO_S16LSB:AUDIO_U8;
-    desired.channels = pcfxFormat->nChannels;
+    desired.channels = (Uint8)pcfxFormat->nChannels;
 
     if ((desired.freq == 22050) && (Audio_ResamplingQuality > 0))
     {
@@ -1988,23 +1942,13 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_LockAudioDevice(lpThis->device_id);
         SDL_PauseAudioDevice(lpThis->device_id, 1);
         SDL_UnlockAudioDevice(lpThis->device_id);
-#else
-        SDL_LockAudio();
-        SDL_PauseAudio(1);
-        SDL_UnlockAudio();
-#endif
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_CloseAudioDevice(lpThis->device_id);
     lpThis->device_id = 0;
-#else
-    SDL_CloseAudio();
-#endif
 
     if (lpThis->conv_data != NULL)
     {
@@ -2017,12 +1961,8 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
         lpThis->accum_data = NULL;
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     lpThis->device_id = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
     if (lpThis->device_id == 0)
-#else
-    if (0 != SDL_OpenAudio(&desired, &obtained))
-#endif
     {
         lpThis->status = SDL_AUDIO_STOPPED;
 #ifdef DEBUG_DSOUND
@@ -2033,7 +1973,6 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
 
     if ((obtained.channels > 2) || ((obtained.size / (obtained.samples * obtained.channels)) > 2))
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_CloseAudioDevice(lpThis->device_id);
 
         lpThis->device_id = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE
@@ -2042,14 +1981,6 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
             #endif
         );
         if (lpThis->device_id == 0)
-#else
-        SDL_CloseAudio();
-        if (0 == SDL_OpenAudio(&desired, NULL))
-        {
-            obtained = desired;
-        }
-        else
-#endif
         {
             lpThis->status = SDL_AUDIO_STOPPED;
 #ifdef DEBUG_DSOUND
@@ -2080,12 +2011,8 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
             free(lpThis->accum_data);
             lpThis->accum_data = NULL;
         }
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_CloseAudioDevice(lpThis->device_id);
         lpThis->device_id = 0;
-#else
-        SDL_CloseAudio();
-#endif
 
 #ifdef DEBUG_DSOUND
         eprintf("error\n");
@@ -2095,11 +2022,7 @@ uint32_t IDirectSoundBuffer_SetFormat_c(struct IDirectSoundBuffer_c *lpThis, con
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_PauseAudioDevice(lpThis->device_id, 0);
-#else
-        SDL_PauseAudio(0);
-#endif
     }
 
 #ifdef DEBUG_DSOUND
@@ -2129,7 +2052,7 @@ static void RecalculateVolume(struct IDirectSoundBuffer_c *lpThis)
     lpThis->right_volume = right_volume;
 }
 
-uint32_t IDirectSoundBuffer_SetVolume_c(struct IDirectSoundBuffer_c *lpThis, int32_t lVolume)
+uint32_t CCALL IDirectSoundBuffer_SetVolume_c(struct IDirectSoundBuffer_c *lpThis, int32_t lVolume)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_SetVolume: 0x%" PRIxPTR ", %i - ", (uintptr_t) lpThis, lVolume);
@@ -2155,7 +2078,7 @@ uint32_t IDirectSoundBuffer_SetVolume_c(struct IDirectSoundBuffer_c *lpThis, int
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_SetPan_c(struct IDirectSoundBuffer_c *lpThis, int32_t lPan)
+uint32_t CCALL IDirectSoundBuffer_SetPan_c(struct IDirectSoundBuffer_c *lpThis, int32_t lPan)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_SetPan: 0x%" PRIxPTR ", %i - ", (uintptr_t) lpThis, lPan);
@@ -2181,13 +2104,13 @@ uint32_t IDirectSoundBuffer_SetPan_c(struct IDirectSoundBuffer_c *lpThis, int32_
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_SetFrequency_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwFrequency)
+uint32_t CCALL IDirectSoundBuffer_SetFrequency_c(struct IDirectSoundBuffer_c *lpThis, uint32_t dwFrequency)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_SetFrequency");
     exit(1);
 }
 
-uint32_t IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
+uint32_t CCALL IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
 {
     struct IDirectSoundBuffer_c *PrimaryBuffer;
 
@@ -2205,15 +2128,9 @@ uint32_t IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
 
     if (lpThis->primary)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         SDL_LockAudioDevice(lpThis->device_id);
         SDL_PauseAudioDevice(lpThis->device_id, 1);
         SDL_UnlockAudioDevice(lpThis->device_id);
-#else
-        SDL_LockAudio();
-        SDL_PauseAudio(1);
-        SDL_UnlockAudio();
-#endif
         lpThis->status = SDL_AUDIO_PAUSED;
 
 #ifdef DEBUG_DSOUND
@@ -2224,22 +2141,14 @@ uint32_t IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
 
     PrimaryBuffer = lpThis->DirectSound->PrimaryBuffer;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_LockAudioDevice(PrimaryBuffer->device_id);
-#else
-    SDL_LockAudio();
-#endif
 
     if (lpThis->status == SDL_AUDIO_PLAYING)
     {
         remove_from_list(PrimaryBuffer, lpThis, 0);
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_UnlockAudioDevice(PrimaryBuffer->device_id);
-#else
-    SDL_UnlockAudio();
-#endif
 
 #ifdef DEBUG_DSOUND
     eprintf("OK\n");
@@ -2247,7 +2156,7 @@ uint32_t IDirectSoundBuffer_Stop_c(struct IDirectSoundBuffer_c *lpThis)
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_Unlock_c(struct IDirectSoundBuffer_c *lpThis, void * pvAudioPtr1, uint32_t dwAudioBytes1, void * pvAudioPtr2, uint32_t dwAudioBytes2)
+uint32_t CCALL IDirectSoundBuffer_Unlock_c(struct IDirectSoundBuffer_c *lpThis, void * pvAudioPtr1, uint32_t dwAudioBytes1, void * pvAudioPtr2, uint32_t dwAudioBytes2)
 {
 #ifdef DEBUG_DSOUND
     eprintf("IDirectSoundBuffer_Unlock: 0x%" PRIxPTR ", 0x%" PRIxPTR ", %i, 0x%" PRIxPTR ", %i - ", (uintptr_t) lpThis, (uintptr_t) pvAudioPtr1, dwAudioBytes1, (uintptr_t) pvAudioPtr2, dwAudioBytes2);
@@ -2305,7 +2214,7 @@ uint32_t IDirectSoundBuffer_Unlock_c(struct IDirectSoundBuffer_c *lpThis, void *
     return DS_OK;
 }
 
-uint32_t IDirectSoundBuffer_Restore_c(struct IDirectSoundBuffer_c *lpThis)
+uint32_t CCALL IDirectSoundBuffer_Restore_c(struct IDirectSoundBuffer_c *lpThis)
 {
     eprintf("Unsupported method: %s\n", "IDirectSoundBuffer_Restore");
     exit(1);

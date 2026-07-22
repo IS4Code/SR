@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -26,12 +26,16 @@
 #define _TIME_BITS 64
 #include <stdio.h>
 #include <fcntl.h>
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <io.h>
+#else
 #include <unistd.h>
-#include "Game_defs.h"
+#endif
 #include "Game_vars.h"
 #include "Warcraft-proc-vfs.h"
 #include "Warcraft-proc.h"
 #include "virtualfs.h"
+#include "Game_memory.h"
 
 static void Game_Set_errno_val(void)
 {
@@ -39,10 +43,11 @@ static void Game_Set_errno_val(void)
 }
 
 
-FILE *Game_fopen(const char *filename, const char *mode)
+void * CCALL Game_fopen(const char *filename, const char *mode)
 {
     char temp_str[MAX_PATH];
-    FILE *ret;
+    FILE *fp;
+    void *ret;
     file_entry *realdir;
     int vfs_err;
 
@@ -56,46 +61,36 @@ FILE *Game_fopen(const char *filename, const char *mode)
     fprintf(stderr, "fopen: real name: %s (%i)\n", (char *) &temp_str, vfs_err);
 #endif
 
-    ret = fopen((char *) &temp_str, mode);
+    fp = fopen((char *) &temp_str, mode);
     Game_Set_errno_val();
 
-    if (vfs_err && ret != NULL)
+    if (fp != NULL)
     {
-        vfs_add_file(realdir, (char *) &temp_str, 0);
+        if (vfs_err)
+        {
+            vfs_add_file(realdir, (char *) &temp_str, 0);
+        }
+
+        if (sizeof(void *) > 4)
+        {
+            ret = x86_malloc(sizeof(void *));
+            if (ret != NULL)
+            {
+                *(FILE **)ret = fp;
+            }
+            else
+            {
+                fclose(fp);
+            }
+        }
+        else ret = fp;
     }
+    else ret = NULL;
 
     return ret;
 }
 
-int32_t Game_open(const char *pathname, int32_t flags, uint32_t mode)
-{
-    char temp_str[MAX_PATH];
-    int ret;
-    file_entry *realdir;
-    int vfs_err;
-
-#if defined(__DEBUG__)
-    fprintf(stderr, "open: original name: %s\n", pathname);
-#endif
-
-    vfs_err = vfs_get_real_name(pathname, (char *) &temp_str, &realdir);
-
-#if defined(__DEBUG__)
-    fprintf(stderr, "open: real name: %s (%i)\n", (char *) &temp_str, vfs_err);
-#endif
-
-    ret = open((char *) &temp_str, flags, mode);
-    Game_Set_errno_val();
-
-    if (vfs_err && ret != -1)
-    {
-        vfs_add_file(realdir, (char *) &temp_str, 0);
-    }
-
-    return ret;
-}
-
-int32_t Game_unlink(const char *pathname)
+int32_t CCALL Game_unlink(const char *pathname)
 {
     char temp_str[MAX_PATH];
     int ret;

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2022 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -26,15 +26,13 @@
 #define _CLIB_ASM_LLASM_H_INCLUDED_
 
 #include <stdint.h>
+#include "../platform.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int32_t sprintf2_c(char *str, const char *format, uint32_t *ap);
-int32_t sscanf2_c(const char *str, const char *format, uint32_t *ap);
-
-void _time642_c(uint32_t *t64);
+void CCALL _time642_c(uint32_t *t64);
 
 #ifdef __cplusplus
 }

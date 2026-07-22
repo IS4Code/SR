@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -27,16 +27,17 @@
 
 #include <stdio.h>
 #include <sys/types.h>
+#include "Game_defs.h"
 
 #pragma pack(1)
 
-typedef struct __attribute__ ((__packed__)) {
+typedef struct PACKED {
     uint16_t twosecs : 5;    // seconds / 2
     uint16_t minutes : 6;    // minutes (0,59)
     uint16_t hours   : 5;    // hours (0,23)
 } watcom_ftime_t;
 
-typedef struct __attribute__ ((__packed__)) {
+typedef struct PACKED {
     uint16_t day     : 5;    // day (1,31)
     uint16_t month   : 4;    // month (1,12)
     uint16_t year    : 7;    // 0 is 1980
@@ -59,11 +60,11 @@ struct watcom_dirent {
     uint16_t           d_lfnax;         /* DOS LFN search handle */
     uint8_t            d_lfnsup;        /* DOS LFN support status */
     uint8_t            d_attr;          /* file's attribute */
-    union __attribute__ ((__packed__)) {
+    union PACKED {
         uint16_t           d_time;          /* file's time */
         watcom_ftime_t     vt;
     } ut;
-    union __attribute__ ((__packed__)) {
+    union PACKED {
         uint16_t           d_date;          /* file's date */
         watcom_fdate_t     vd;
     } ud;
@@ -104,20 +105,16 @@ struct watcom_find_t {
 extern "C" {
 #endif
 
-extern int32_t Game_access(const char *path, int32_t mode);
-extern int32_t Game_chdir(const char *path);
-extern char *Game_getcwd(char *buf, int32_t size);
-extern FILE *Game_fopen(const char *filename, const char *mode);
-extern int32_t Game_open(const char *pathname, int32_t flags, uint32_t mode);
-extern int32_t Game_mkdir(const char *pathname);
-extern int32_t Game_unlink(const char *pathname);
-extern int32_t Game_rename(const char *oldpath, const char *newpath);
-extern struct watcom_dirent *Game_opendir(const char *dirname);
-extern struct watcom_dirent *Game_readdir(struct watcom_dirent *dirp);
-extern int32_t Game_closedir(struct watcom_dirent *dirp);
-extern uint32_t Game_dos_findfirst(const char *path, const uint32_t attributes, struct watcom_find_t *buffer);
-extern uint32_t Game_dos_findnext(struct watcom_find_t *buffer);
-extern uint32_t Game_dos_findclose(struct watcom_find_t *buffer);
+extern char * CCALL Game_getcwd(char *buf, int32_t size);
+extern void * CCALL Game_fopen(const char *filename, const char *mode);
+extern int32_t CCALL Game_unlink(const char *pathname);
+extern int32_t CCALL Game_rename(const char *oldpath, const char *newpath);
+extern struct watcom_dirent * CCALL Game_opendir(const char *dirname);
+extern struct watcom_dirent * CCALL Game_readdir(struct watcom_dirent *dirp);
+extern int32_t CCALL Game_closedir(struct watcom_dirent *dirp);
+extern uint32_t CCALL Game_dos_findfirst(const char *path, const uint32_t attributes, struct watcom_find_t *buffer);
+extern uint32_t CCALL Game_dos_findnext(struct watcom_find_t *buffer);
+extern uint32_t CCALL Game_dos_findclose(struct watcom_find_t *buffer);
 
 #ifdef __cplusplus
 }

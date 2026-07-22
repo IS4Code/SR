@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -23,13 +23,12 @@
  */
 
 #include <stdio.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Warcraft-int.h"
 #include "Game_thread.h"
 #include "Game-int.h"
 
-void X86_InterruptProcedure(
+void CCALL X86_InterruptProcedure(
     const uint8_t IntNum,
     _cpu_regs *regs)
 {
@@ -58,11 +57,7 @@ void X86_InterruptProcedure(
 #endif
 					if (AL == 0x13)
 					{
-					#if SDL_VERSION_ATLEAST(2,0,0)
 						if (Game_Window != NULL)
-					#else
-						if (Game_Screen != NULL)
-					#endif
 						{
 							event.type = SDL_USEREVENT;
 							event.user.code = EC_DISPLAY_DESTROY;
@@ -83,11 +78,7 @@ void X86_InterruptProcedure(
 
 						SDL_SemWait(Game_DisplaySem);
 
-					#if SDL_VERSION_ATLEAST(2,0,0)
 						if (Game_Window == NULL)
-					#else
-						if (Game_Screen == NULL)
-					#endif
 						{
 #if defined(__DEBUG__)
 							fprintf (stderr, "Error: Couldn't set video mode\n");
@@ -99,11 +90,7 @@ void X86_InterruptProcedure(
 					}
 					else if (AL == 3)
 					{
-					#if SDL_VERSION_ATLEAST(2,0,0)
 						if (Game_Window != NULL)
-					#else
-						if (Game_Screen != NULL)
-					#endif
 						{
 							event.type = SDL_USEREVENT;
 							event.user.code = EC_DISPLAY_DESTROY;
@@ -127,11 +114,7 @@ void X86_InterruptProcedure(
 				case 0x0f:
 				// Get Current Video Mode
 
-				#if SDL_VERSION_ATLEAST(2,0,0)
 					if (Game_Window == NULL)
-				#else
-					if (Game_Screen == NULL)
-				#endif
 					{
 						AH = 80;	// number of character columns
 						AL = 3;		// display mode

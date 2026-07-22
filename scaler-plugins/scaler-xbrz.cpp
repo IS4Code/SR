@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2021-2023 Roman Pauer
+ *  Copyright (C) 2021-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -25,23 +25,31 @@
 #include "scaler-plugins.h"
 #include "xbrz/xbrz.h"
 
-static void scale(int factor, const void *src, void *dst, int src_width, int src_height, int y_first, int y_last)
+#ifdef _MSC_VER
+    #define EXPORT __declspec(dllexport)
+#elif defined __GNUC__
+    #define EXPORT __attribute__ ((visibility ("default")))
+#else
+    #define EXPORT
+#endif
+
+static void SCALER_PLUGIN_API scale(int factor, const void *src, void *dst, int src_width, int src_height, int y_first, int y_last)
 {
-    xbrz::scale(factor, (const uint32_t *)src, (uint32_t *)dst, src_width, src_height, xbrz::ColorFormat::RGB, xbrz::ScalerCfg(), y_first, y_last);
+    xbrz::scale((size_t)factor, (const uint32_t *)src, (uint32_t *)dst, src_width, src_height, xbrz::ColorFormat::rgb, xbrz::ScalerCfg(), y_first, y_last);
 }
 
-static int get_maximum_scale_factor(void)
+static int SCALER_PLUGIN_API get_maximum_scale_factor(void)
 {
     return xbrz::SCALE_FACTOR_MAX;
 }
 
-static void shutdown_plugin(void)
+static void SCALER_PLUGIN_API shutdown_plugin(void)
 {
 }
 
 extern "C"
-__attribute__ ((visibility ("default")))
-int initialize_scaler_plugin(scaler_plugin_functions *functions)
+EXPORT
+int SCALER_PLUGIN_API initialize_scaler_plugin(scaler_plugin_functions *functions)
 {
     uint32_t src[8*8], dst[8*2*8*2];
     int index;
@@ -50,7 +58,7 @@ int initialize_scaler_plugin(scaler_plugin_functions *functions)
 
     // one-time buffer creation
     for (index = 0; index < 8*8; index++) src[index] = 0;
-    xbrz::scale(2, src, dst, 8, 8, xbrz::ColorFormat::RGB);
+    xbrz::scale(2, src, dst, 8, 8, xbrz::ColorFormat::rgb);
 
     functions->scale = &scale;
     functions->get_maximum_scale_factor = &get_maximum_scale_factor;

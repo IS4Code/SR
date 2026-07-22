@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2024 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -36,6 +36,9 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#if !defined(KEY_WOW64_32KEY)
+#define KEY_WOW64_32KEY 0x200
+#endif
 #else
 #include "CLIB.h"
 #endif
@@ -129,7 +132,7 @@ static int SetValue(const char *ValueName, char *Value)
 
             while (*name_start == ' ') name_start++;
 
-            buf_length = (uintptr_t)value_start - (uintptr_t)name_start;
+            buf_length = (int)((uintptr_t)value_start - (uintptr_t)name_start);
             while ((buf_length != 0) && (name_start[buf_length - 1] == ' '))
             {
                 buf_length--;
@@ -216,7 +219,7 @@ static int GetValue(const char *ValueName, char *Value, unsigned int Length)
 
         while (*name_start == ' ') name_start++;
 
-        buf_length = (uintptr_t)value_start - (uintptr_t)name_start;
+        buf_length = (unsigned int)((uintptr_t)value_start - (uintptr_t)name_start);
         while ((buf_length != 0) && (name_start[buf_length - 1] == ' '))
         {
             buf_length--;
@@ -228,7 +231,7 @@ static int GetValue(const char *ValueName, char *Value, unsigned int Length)
         value_start++;
         while (*value_start == ' ') value_start++;
 
-        buf_length = strlen(value_start);
+        buf_length = (unsigned int)strlen(value_start);
         while ((buf_length != 0) && (value_start[buf_length - 1] == ' '))
         {
             buf_length--;
@@ -247,15 +250,15 @@ static int GetValue(const char *ValueName, char *Value, unsigned int Length)
     return 0;
 }
 
-int32_t Registry_SetValueDword(const char *ValueName, uint32_t Value)
+int32_t CCALL Registry_SetValueDword(const char *ValueName, uint32_t Value)
 {
 #ifdef _WIN32
     if (Game_Installation == 0)
     {
         HKEY hKey;
-        LSTATUS result;
+        LONG result;
 
-        if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE, &hKey))
+        if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &hKey))
         {
             return 0;
         }
@@ -282,15 +285,15 @@ int32_t Registry_SetValueDword(const char *ValueName, uint32_t Value)
     }
 }
 
-/*int32_t Registry_SetValueString(const char *ValueName, const char *Value)
+/*int32_t CCALL Registry_SetValueString(const char *ValueName, const char *Value)
 {
 #ifdef _WIN32
     if (Game_Installation == 0)
     {
         HKEY hKey;
-        LSTATUS result;
+        LONG result;
 
-        if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE, &hKey))
+        if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &hKey))
         {
             return 0;
         }
@@ -305,17 +308,17 @@ int32_t Registry_SetValueDword(const char *ValueName, uint32_t Value)
     return SetValue(ValueName, Value);
 }*/
 
-int32_t Registry_GetValueDword(const char *ValueName, uint32_t *Value)
+int32_t CCALL Registry_GetValueDword(const char *ValueName, uint32_t *Value)
 {
 #ifdef _WIN32
     if (Game_Installation == 0)
     {
         HKEY hKey;
-        LSTATUS result;
+        LONG result;
         DWORD type, cbData;
 
         *Value = -1;
-        if (ERROR_SUCCESS == RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE, &hKey))
+        if (ERROR_SUCCESS == RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &hKey))
         {
             cbData = 4;
             result = RegQueryValueExA(hKey, ValueName, 0, &type, (LPBYTE)Value, &cbData);
@@ -354,17 +357,17 @@ int32_t Registry_GetValueDword(const char *ValueName, uint32_t *Value)
     }
 }
 
-int32_t Registry_GetValueString(const char *ValueName, char *Value)
+int32_t CCALL Registry_GetValueString(const char *ValueName, char *Value)
 {
 #ifdef _WIN32
     if (Game_Installation == 0)
     {
         HKEY hKey;
-        LSTATUS result;
+        LONG result;
         DWORD type, cbData;
 
         *Value = 0;
-        if (ERROR_SUCCESS == RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE, &hKey))
+        if (ERROR_SUCCESS == RegOpenKeyExA(HKEY_LOCAL_MACHINE, REGISTRY_BASE, 0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &hKey))
         {
             cbData = 254;
             result = RegQueryValueExA(hKey, ValueName, 0, &type, (LPBYTE)Value, &cbData);

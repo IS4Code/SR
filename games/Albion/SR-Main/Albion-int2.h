@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,6 +24,8 @@
 
 #if !defined(_ALBION_INT2_H_INCLUDED_)
 #define _ALBION_INT2_H_INCLUDED_
+
+#include "Game_defs.h"
 
 #pragma pack(4)
 
@@ -74,10 +76,20 @@ typedef struct _Game_BYTEREGS_ {
   uint32_t cflag;
 } Game_BYTEREGS;
 
+typedef struct _Game_PTR32REGS_ {
+  PTR32(void) eax;
+  PTR32(void) ebx;
+  PTR32(void) ecx;
+  PTR32(void) edx;
+  PTR32(void) esi;
+  PTR32(void) edi;
+} Game_PTR32REGS;
+
 typedef union _Game_REGS_ {
   Game_DWORDREGS d;
   Game_WORDREGS w;
   Game_BYTEREGS h;
+  Game_PTR32REGS p;
 } Game_REGS;
 
 #pragma pack()
@@ -86,7 +98,7 @@ typedef union _Game_REGS_ {
 extern "C" {
 #endif
 
-extern uint32_t Game_int386x(
+extern uint32_t CCALL Game_int386x(
     const uint32_t IntNum,
     const Game_REGS *in_regs,
     Game_REGS *out_regs,

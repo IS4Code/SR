@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,28 +22,16 @@
  *
  */
 
+#define _FILE_OFFSET_BITS 64
+#define _TIME_BITS 64
 #include <string.h>
-#include <malloc.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <time.h>
-#ifdef USE_SDL2
-    #include <SDL2/SDL.h>
-    #include <SDL2/SDL_thread.h>
-    #include <SDL2/SDL_version.h>
-    #include <SDL2/SDL_mixer.h>
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <direct.h>
 #else
-    #include <SDL/SDL.h>
-    #include <SDL/SDL_thread.h>
-    #include <SDL/SDL_version.h>
-    #include <SDL/SDL_mixer.h>
+#include <unistd.h>
 #endif
-
-#if (SDL_MAJOR_VERSION == 1) && SDL_VERSION_ATLEAST(1, 2, 50)
-#warning Compilation using sdl12-compat detected.
-#warning The compiled program might not work properly.
-#warning Compilation using SDL2 is recommended.
-#endif
+#include <time.h>
 
 #include "Game_defs.h"
 
@@ -60,25 +48,103 @@
 #include "Xcom-music-midiplugin.h"
 #include "Xcom-music-midiplugin2.h"
 #include "Game_config.h"
+#include "Game_memory.h"
 #include "Game_misc.h"
 #include "Game_scalerplugin.h"
 #include "Game_thread.h"
 #include "Game_virtualkeyboard.h"
 #include "virtualfs.h"
+#include "Xcom-proc.h"
 #include "Xcom-proc-vfs.h"
 #include "display.h"
 #include "audio.h"
 #include "input.h"
 
-#if defined(ALLOW_OPENGL) && !SDL_VERSION_ATLEAST(2,0,0)
-static int gl_FBO = 0;
-static PFNGLGENFRAMEBUFFERSEXTPROC gl_glGenFramebuffersEXT;
-static PFNGLDELETEFRAMEBUFFERSEXTPROC gl_glDeleteFramebuffersEXT;
-static PFNGLFRAMEBUFFERTEXTURE2DEXTPROC gl_glFramebufferTexture2DEXT;
-static PFNGLBINDFRAMEBUFFEREXTPROC gl_glBindFramebufferEXT;
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+#if !defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x800
 #endif
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
+static int thread_concurency_libs;
+static HRESULT (WINAPI *dyn_RoInitialize)(DWORD);
+static void (WINAPI *dyn_RoUninitialize)();
+static HRESULT (WINAPI *dyn_CoInitializeEx)(LPVOID, DWORD);
+static void (WINAPI *dyn_CoUninitialize)();
+
+static void Game_InitThreadConcurencyLibs(void)
+{
+    HMODULE hLib;
+
+    thread_concurency_libs = 0;
+
+    hLib = LoadLibraryExW(L"combase.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hLib != NULL)
+    {
+        dyn_RoInitialize = (HRESULT (WINAPI *)(DWORD))GetProcAddress(hLib, "RoInitialize");
+        dyn_RoUninitialize = (void (WINAPI *)())GetProcAddress(hLib, "RoUninitialize");
+        if (dyn_RoInitialize != NULL && dyn_RoUninitialize != NULL)
+        {
+            thread_concurency_libs = 1;
+        }
+        else
+        {
+            FreeLibrary(hLib);
+            hLib = NULL;
+        }
+    }
+
+    if (thread_concurency_libs == 0)
+    {
+        hLib = LoadLibraryExW(L"ole32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (hLib != NULL)
+        {
+            dyn_CoInitializeEx = (HRESULT (WINAPI *)(LPVOID, DWORD))GetProcAddress(hLib, "CoInitializeEx");
+            dyn_CoUninitialize = (void (WINAPI *)())GetProcAddress(hLib, "CoUninitialize");
+            if (dyn_CoInitializeEx != NULL && dyn_CoUninitialize != NULL)
+            {
+                thread_concurency_libs = 2;
+            }
+            else
+            {
+                FreeLibrary(hLib);
+                hLib = NULL;
+            }
+        }
+    }
+
+    Game_InitThreadConcurency();
+}
+
+void Game_InitThreadConcurency(void)
+{
+    if (thread_concurency_libs == 1)
+    {
+        dyn_RoInitialize(1); // RO_INIT_MULTITHREADED
+    }
+    else if (thread_concurency_libs == 2)
+    {
+        dyn_CoInitializeEx(NULL, 0); // COINIT_MULTITHREADED
+    }
+}
+
+void Game_CloseThreadConcurency(void)
+{
+    if (thread_concurency_libs == 1)
+    {
+        dyn_RoUninitialize();
+    }
+    else if (thread_concurency_libs == 2)
+    {
+        dyn_CoUninitialize();
+    }
+}
+
+#endif
+
+
 static void Display_RecalculateResolution(int w, int h)
 {
     if (Display_FSType == 1)
@@ -86,12 +152,12 @@ static void Display_RecalculateResolution(int w, int h)
         if ((((double)w) / h) > (((double)Display_Width) / Display_Height))
         {
             Picture_Height = h;
-            Picture_Width = (((double)h) * Display_Width) / Display_Height;
+            Picture_Width = (int32_t)((((double)h) * Display_Width) / Display_Height);
         }
         else
         {
             Picture_Width = w;
-            Picture_Height = (((double)w) * Display_Height) / Display_Width;
+            Picture_Height = (int32_t)((((double)w) * Display_Height) / Display_Width);
         }
     }
     else
@@ -114,7 +180,6 @@ static void Display_RecalculateResolution(int w, int h)
     Game_VideoAspectXR = ((Picture_Width-1) << 16) / (320-1);
     Game_VideoAspectYR = ((Picture_Height-1) << 16) / (200-1);
 }
-#endif
 
 static const char *Game_WindowTitle(void)
 {
@@ -142,17 +207,9 @@ static void Game_Display_Create(void)
     SDL_LockMutex(Game_ScreenMutex);
 
 #if (EXE_BUILD == EXE_COMBINED)
-#if SDL_VERSION_ATLEAST(2,0,0)
     if (Game_Window != NULL)
-#else
-    if (Game_Screen != NULL)
-#endif
     {
-    #if SDL_VERSION_ATLEAST(2,0,0)
         SDL_SetWindowTitle(Game_Window, Game_WindowTitle());
-    #else
-        SDL_WM_SetCaption(Game_WindowTitle(), NULL);
-    #endif
 
         memset(Game_FrameBuffer, 0, 65536);
         Game_FlipScreen();
@@ -163,7 +220,6 @@ static void Game_Display_Create(void)
     }
 #endif
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     if (Display_Fullscreen && Display_FSType)
     {
         Game_Window = SDL_CreateWindow(Game_WindowTitle(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_HIDDEN | (Display_MouseLocked ? SDL_WINDOW_INPUT_GRABBED : 0));
@@ -429,322 +485,6 @@ static void Game_Display_Create(void)
 
         Game_DisplayActive = 1;
     }
-#else
-    {
-        Uint32 flags;
-
-    #ifdef ALLOW_OPENGL
-        if (Game_UseOpenGL)
-        {
-            if (Display_Bitsperpixel == 32)
-            {
-                SDL_GL_SetAttribute( SDL_GL_RED_SIZE, 8 );
-                SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, 8 );
-                SDL_GL_SetAttribute( SDL_GL_BLUE_SIZE, 8 );
-            }
-            else if (Display_Bitsperpixel == 16)
-            {
-                SDL_GL_SetAttribute( SDL_GL_RED_SIZE, 5 );
-                SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, 6 );
-                SDL_GL_SetAttribute( SDL_GL_BLUE_SIZE, 5 );
-            }
-            SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER, 1 );
-
-            flags = SDL_OPENGL;
-            if (Display_Fullscreen)
-            {
-                flags |= SDL_FULLSCREEN | SDL_NOFRAME;
-            }
-        }
-        else
-    #endif
-        if (Display_Fullscreen)
-        {
-            flags = SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_FULLSCREEN | SDL_NOFRAME;
-        }
-        else
-        {
-            flags = SDL_SWSURFACE;
-        }
-
-    #ifdef ALLOW_OPENGL
-        if (Display_Fullscreen && Display_FSType)
-        {
-            Game_Screen = SDL_SetVideoMode (0, 0, 0, flags);
-
-            if (Game_Screen != NULL)
-            {
-                Display_RecalculateResolution(Game_Screen->w, Game_Screen->h);
-            }
-        }
-        else
-    #endif
-        {
-            Game_Screen = SDL_SetVideoMode (Display_Width, Display_Height, Display_Bitsperpixel, flags);
-        }
-    }
-
-#ifdef ALLOW_OPENGL
-    if ((Game_Screen != NULL) && Game_UseOpenGL)
-    do {
-        int index;
-        GLint scaling_quality, max_texture_size;
-
-        // Scaler_ScaleTexture and Scaler_ScaleTextureData are mutually exclusive
-        if (Scaler_ScaleTextureData)
-        {
-            if (ScalerPlugin_Startup())
-            {
-                SDL_WM_GrabInput(SDL_GRAB_OFF);
-                Game_Screen = NULL;
-
-                break;
-            }
-        }
-
-        // flush GL errors
-        while(glGetError() != GL_NO_ERROR);
-
-        glViewport(Picture_Position_UL_X, Picture_Position_UL_Y, Picture_Width, Picture_Height);
-
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-
-        scaling_quality = (Game_ScalingQuality)?GL_LINEAR:GL_NEAREST;
-
-        if (Scaler_ScaleTexture)
-        {
-            int horizontal_factor, vertical_factor;
-
-            if (!gl_FBO)
-            {
-                gl_glGenFramebuffersEXT = (PFNGLGENFRAMEBUFFERSEXTPROC) SDL_GL_GetProcAddress("glGenFramebuffersEXT");
-                gl_glDeleteFramebuffersEXT = (PFNGLDELETEFRAMEBUFFERSEXTPROC) SDL_GL_GetProcAddress("glDeleteFramebuffersEXT");
-                gl_glFramebufferTexture2DEXT = (PFNGLFRAMEBUFFERTEXTURE2DEXTPROC) SDL_GL_GetProcAddress("glFramebufferTexture2DEXT");
-                gl_glBindFramebufferEXT = (PFNGLBINDFRAMEBUFFEREXTPROC) SDL_GL_GetProcAddress("glBindFramebufferEXT");
-
-                if ((gl_glGenFramebuffersEXT != NULL) &&
-                    (gl_glDeleteFramebuffersEXT != NULL) &&
-                    (gl_glFramebufferTexture2DEXT != NULL) &&
-                    (gl_glBindFramebufferEXT != NULL)
-                   )
-                {
-                    gl_FBO = 1;
-                }
-                else
-                {
-                    gl_FBO = -1;
-                }
-            }
-
-            if (gl_FBO <= 0)
-            {
-                SDL_WM_GrabInput(SDL_GRAB_OFF);
-                Game_Screen = NULL;
-
-                break;
-            }
-
-            if (!Scaler_ScaleFactor)
-            {
-                horizontal_factor = vertical_factor = 2;
-
-                while ((horizontal_factor + 1) * Render_Width <= Picture_Width) horizontal_factor++;
-                while ((vertical_factor + 1) * Render_Height <= Picture_Height) vertical_factor++;
-
-                if (horizontal_factor > GAME_MAX_SCALE_FACTOR) horizontal_factor = GAME_MAX_SCALE_FACTOR;
-                if (vertical_factor > GAME_MAX_SCALE_FACTOR) vertical_factor = GAME_MAX_SCALE_FACTOR;
-
-                max_texture_size = 0;
-                glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
-                if (max_texture_size > (int)Picture_Width)
-                {
-                    while (horizontal_factor * (int)Render_Width > max_texture_size) horizontal_factor--;
-                }
-                if (max_texture_size > (int)Picture_Height)
-                {
-                    while (vertical_factor * (int)Render_Height > max_texture_size) vertical_factor--;
-                }
-
-                Scaler_ScaleFactor = 1;
-            }
-            else
-            {
-                horizontal_factor = vertical_factor = Scaler_ScaleFactor;
-            }
-
-            Scaler_ScaledTextureWidth = horizontal_factor * Render_Width;
-            Scaler_ScaledTextureHeight = vertical_factor * Render_Height;
-
-            glGenTextures(3, &(Game_GLScaledTexture[0]));
-
-            for (index = 0; index < 3; index++)
-            {
-                glBindTexture(GL_TEXTURE_2D, Game_GLScaledTexture[index]);
-
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, scaling_quality);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, scaling_quality);
-
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Scaler_ScaledTextureWidth, Scaler_ScaledTextureHeight, 0, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, NULL);
-            }
-
-            gl_glGenFramebuffersEXT(3, &(Game_GLFramebuffer[0]));
-
-            for (index = 0; index < 3; index++)
-            {
-                gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, Game_GLFramebuffer[index]);
-
-                gl_glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, Game_GLScaledTexture[index], 0);
-            }
-
-            scaling_quality = GL_NEAREST;
-        }
-
-        if (Scaler_ScaleTextureData)
-        {
-            if (!Scaler_ScaleFactor)
-            {
-                int max_factor;
-
-                Scaler_ScaleFactor = 2;
-
-                while (((Scaler_ScaleFactor + 1) * Render_Width <= Picture_Width) ||
-                       ((Scaler_ScaleFactor + 1) * Render_Height <= Picture_Height)
-                      ) Scaler_ScaleFactor++;
-
-                if (Scaler_ScaleFactor > GAME_MAX_SCALE_FACTOR) Scaler_ScaleFactor = GAME_MAX_SCALE_FACTOR;
-
-                max_factor = ScalerPlugin_get_maximum_scale_factor();
-                if (Scaler_ScaleFactor > max_factor) Scaler_ScaleFactor = max_factor;
-
-                max_texture_size = 0;
-                glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
-                if (max_texture_size > (int)Picture_Width)
-                {
-                    while (Scaler_ScaleFactor * (int)Render_Width > max_texture_size) Scaler_ScaleFactor--;
-                }
-                if (max_texture_size > (int)Picture_Height)
-                {
-                    while (Scaler_ScaleFactor * (int)Render_Height > max_texture_size) Scaler_ScaleFactor--;
-                }
-            }
-        }
-        else
-        {
-            Scaler_ScaleFactor = 1;
-        }
-
-        if (Scaler_ScaleTextureData)
-        {
-            Game_ScaledTextureData = malloc(Scaler_ScaleFactor * Render_Width * Scaler_ScaleFactor * Render_Height * Display_Bitsperpixel / 8);
-        }
-
-        glGenTextures(3, &(Game_GLTexture[0]));
-
-        for (index = 0; index < 3; index++)
-        {
-            glBindTexture(GL_TEXTURE_2D, Game_GLTexture[index]);
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, scaling_quality);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, scaling_quality);
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Scaler_ScaleFactor * Render_Width, Scaler_ScaleFactor * Render_Height, 0, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Scaler_ScaleTextureData ? Game_ScaledTextureData : Game_TextureData);
-        }
-
-        if ((glGetError() != GL_NO_ERROR) || (Scaler_ScaleTextureData && (Game_ScaledTextureData == NULL)))
-        {
-            if (Game_ScaledTextureData != NULL)
-            {
-                free(Game_ScaledTextureData);
-                Game_ScaledTextureData = NULL;
-            }
-
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            glDeleteTextures(3, &(Game_GLTexture[0]));
-            Game_GLTexture[0] = 0;
-
-            if (Game_GLFramebuffer[0] != 0)
-            {
-                gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-                gl_glDeleteFramebuffersEXT(3, &(Game_GLFramebuffer[0]));
-                Game_GLFramebuffer[0] = 0;
-            }
-
-            if (Game_GLScaledTexture[0] != 0)
-            {
-                glDeleteTextures(3, &(Game_GLScaledTexture[0]));
-                Game_GLScaledTexture[0] = 0;
-            }
-
-            // flush GL errors
-            while(glGetError() != GL_NO_ERROR);
-
-            SDL_WM_GrabInput(SDL_GRAB_OFF);
-            Game_Screen = NULL;
-        }
-    } while (0);
-#endif
-
-    if (Game_Screen != NULL)
-    {
-        int mousex, mousey;
-
-        SDL_ShowCursor(SDL_DISABLE);
-        SDL_WM_SetCaption(Game_WindowTitle(), NULL);
-
-        Reposition_Display();
-
-        if (Display_MouseLocked)
-        {
-            Game_OldCursor = SDL_GetCursor();
-            SDL_SetCursor(Game_NoCursor);
-
-            SDL_WM_GrabInput(SDL_GRAB_ON);
-
-            SDL_WarpMouse(Game_Screen->w / 2, Game_Screen->h / 2);
-        }
-        else
-        {
-            if (Display_Fullscreen)
-            {
-                Game_OldCursor = SDL_GetCursor();
-                SDL_SetCursor(Game_NoCursor);
-
-                SDL_WarpMouse(Game_Screen->w / 2, Game_Screen->h / 2);
-            }
-            else
-            {
-                if (Game_MouseCursor == 2)
-                {
-                    Game_OldCursor = SDL_GetCursor();
-                    SDL_SetCursor(Game_NoCursor);
-                }
-                else if (Game_MouseCursor == 1)
-                {
-                    Game_OldCursor = SDL_GetCursor();
-                    SDL_SetCursor(Game_MinCursor);
-                }
-
-                SDL_GetMouseState(&mousex, &mousey);
-                SDL_WarpMouse(mousex, mousey);
-            }
-
-            SDL_ShowCursor(SDL_ENABLE);
-        }
-
-        Game_DisplayActive = 1;
-    }
-#endif
 
     SDL_UnlockMutex(Game_ScreenMutex);
 
@@ -766,33 +506,12 @@ static void Game_Display_Destroy(int post)
     VirtualKeyboard_Delete();
 
     // clear screen
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_SetRenderDrawColor(Game_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(Game_Renderer);
     SDL_RenderPresent(Game_Renderer);
-#else
-#ifdef ALLOW_OPENGL
-    if (Game_UseOpenGL)
-    {
-        // do nothing
-    }
-    else
-#endif
-    {
-        SDL_Rect rect;
-
-        rect.x = 0;
-        rect.y = 0;
-        rect.w = Game_Screen->w;
-        rect.h = Game_Screen->h;
-        SDL_FillRect(Game_Screen, &rect, 0);
-        SDL_Flip(Game_Screen);
-    }
-#endif
 
     SDL_ShowCursor(SDL_DISABLE);
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_HideWindow(Game_Window);
 
     SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -824,42 +543,6 @@ static void Game_Display_Destroy(int post)
     Game_Renderer = NULL;
     SDL_DestroyWindow(Game_Window);
     Game_Window = NULL;
-#else
-    SDL_WM_GrabInput(SDL_GRAB_OFF);
-
-    //senquack - should not free screens allocated by setvideomode
-//    SDL_FreeSurface(Game_Screen);
-    Game_Screen = NULL;
-
-#ifdef ALLOW_OPENGL
-    if (Game_UseOpenGL)
-    {
-        if (Game_ScaledTextureData != NULL)
-        {
-            free(Game_ScaledTextureData);
-            Game_ScaledTextureData = NULL;
-        }
-
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        glDeleteTextures(3, &(Game_GLTexture[0]));
-        Game_GLTexture[0] = 0;
-
-        if (Game_GLFramebuffer[0] != 0)
-        {
-            gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-            gl_glDeleteFramebuffersEXT(3, &(Game_GLFramebuffer[0]));
-            Game_GLFramebuffer[0] = 0;
-        }
-
-        if (Game_GLScaledTexture[0] != 0)
-        {
-            glDeleteTextures(3, &(Game_GLScaledTexture[0]));
-            Game_GLScaledTexture[0] = 0;
-        }
-    }
-#endif
-#endif
 
     SDL_UnlockMutex(Game_ScreenMutex);
 
@@ -890,11 +573,7 @@ void Game_CleanState(int imm)
     memset(&Game_MouseTable, 0, sizeof(Game_MouseTable));
     memset(&Game_Palette_Or, 0, sizeof(Game_Palette_Or));
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     if (Game_Window != NULL)
-#else
-    if (Game_Screen != NULL)
-#endif
     {
         if (imm)
         {
@@ -936,6 +615,7 @@ static void Game_Cleanup(void)
         if (Game_Sound)
         {
             Mix_HaltChannel(-1);
+            Game_DeinitializeSound();
         }
         Mix_CloseAudio();
     }
@@ -944,18 +624,22 @@ static void Game_Cleanup(void)
 
     Game_CleanState(1);
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     if (Game_TextureData != NULL)
     {
         free(Game_TextureData);
         Game_TextureData = NULL;
     }
-#endif
 
     if (Game_MidiDevice != NULL)
     {
         free(Game_MidiDevice);
         Game_MidiDevice = NULL;
+    }
+
+    if (Game_AWE32RomPath != NULL)
+    {
+        free(Game_AWE32RomPath);
+        Game_AWE32RomPath = NULL;
     }
 
     if (Game_MT32RomsPath != NULL)
@@ -984,7 +668,7 @@ static void Game_Cleanup(void)
 
     if (Zero_Segment != NULL)
     {
-        free(Zero_Segment);
+        x86_free(Zero_Segment);
         Zero_Segment = NULL;
     }
 
@@ -1006,15 +690,18 @@ static void Game_Cleanup(void)
         Game_DisplaySem = NULL;
     }
 
-    /*if (Game_ScreenWindow != NULL)
+    if (sizeof(void *) > 4)
     {
-        free(Game_ScreenWindow);
-        Game_ScreenWindow = NULL;
-    }*/
+        if (Game_stdin != NULL)
+        {
+            x86_free(Game_stdin);
+            Game_stdin = NULL;
+        }
+    }
 
     if (Game_FrameMemory != NULL)
     {
-        free(Game_FrameMemory);
+        x86_free(Game_FrameMemory);
         Game_FrameMemory = NULL;
     }
 
@@ -1031,8 +718,8 @@ static void Game_Cleanup(void)
     }
 
 #if (EXE_BUILD == EXE_COMBINED)
-    Game_area_free(Geoscape_DataBackup, &geoscape_data_end - &geoscape_data_begin);
-    Game_area_free(Tactical_DataBackup, &tactical_data_end - &tactical_data_begin);
+    Game_area_free(Geoscape_DataBackup, (unsigned int)(&geoscape_data_end - &geoscape_data_begin));
+    Game_area_free(Tactical_DataBackup, (unsigned int)(&tactical_data_end - &tactical_data_begin));
 #endif
 
     SDL_Quit();
@@ -1115,7 +802,6 @@ static int Game_Initialize(void)
 
     Game_Sound = 0; // sound and music must be disabled here, but must be set to the default value at the end of the function
     Game_Music = 0;
-    Game_AudioMasterVolume = MIX_MAX_VOLUME;
 
     memset(&Game_MusicSequence, 0, sizeof(Game_MusicSequence));
     Game_MusicSequence.volume = 128;
@@ -1139,20 +825,25 @@ static int Game_Initialize(void)
     Game_SoundCfg.SoundSwapStereo = 0;
     Game_SoundCfg.Reserved = 0;
 
-    Display_ChangeMode = 0;
+    if ((sizeof(void *) > 4))
+    {
+        Game_stdin = NULL;
+    }
 
     Game_Delay_Game = 1;
     Game_Main_Loop_VSync_Ticks = 5;
     Game_Skip_Scrolling_SlowDown = 0;
 
-    Game_VolumeDelta = 0;
-
+    Game_LoadMidiFiles = 0;
     Game_MidiRemapGM2MT32 = 0;
     Game_SoundFontPath = NULL;
     Game_MT32RomsPath = NULL;
+    Game_AWE32RomPath = NULL;
     Game_MidiDevice = NULL;
     Game_OPL3BankNumber = 77;
     Game_OPL3Emulator = 0;
+    Game_MT32DelaySysex = 0;
+    Game_SongLength = 0;
 
     if (Game_ConfigFilename[0] == 0)
     {
@@ -1172,32 +863,20 @@ static int Game_Initialize(void)
     Game_ScaleFactor = 0;
     Game_ExtraScalerThreads = -1;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     Game_Window = NULL;
     Game_Renderer = NULL;
     Game_Texture[0] = NULL;
     Game_ScaledTexture[0] = NULL;
-#else
-    Game_Screen = NULL;
-#if defined(ALLOW_OPENGL)
-    Game_UseOpenGL = 0;
-    Game_GLTexture[0] = 0;
-    Game_GLFramebuffer[0] = 0;
-    Game_GLScaledTexture[0] = 0;
-#endif
-#endif
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     Game_TextureData = NULL;
     Game_ScaledTextureData = NULL;
     Game_CurrentTexture = 0;
     Scaler_ScaleFactor = 0;
     Scaler_ScaleTextureData = 0;
     Scaler_ScaleTexture = 0;
-#endif
 
 #if (EXE_BUILD == EXE_COMBINED)
-    Geoscape_DataBackup = Game_area_copy(&geoscape_data_begin, &geoscape_data_end - &geoscape_data_begin);
-    Tactical_DataBackup = Game_area_copy(&tactical_data_begin, &tactical_data_end - &tactical_data_begin);
+    Geoscape_DataBackup = Game_area_copy(&geoscape_data_begin, (unsigned int)(&geoscape_data_end - &geoscape_data_begin));
+    Tactical_DataBackup = Game_area_copy(&tactical_data_begin, (unsigned int)(&tactical_data_end - &tactical_data_begin));
 
     if ((Geoscape_DataBackup == NULL) || (Tactical_DataBackup == NULL))
     {
@@ -1215,24 +894,12 @@ static int Game_Initialize(void)
         return -1;
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
-    SDL_version linked_version;
-
-    SDL_GetVersion(&linked_version);
-    Game_SDLVersionNum = SDL_VERSIONNUM(linked_version.major, linked_version.minor, linked_version.patch);
-#else
-    const SDL_version *linked_version;
-
-    linked_version = SDL_Linked_Version();
-    Game_SDLVersionNum = SDL_VERSIONNUM(linked_version->major, linked_version->minor, linked_version->patch);
-#endif
-
-#if (SDL_MAJOR_VERSION == 1)
-    if (Game_SDLVersionNum >= SDL_VERSIONNUM(1,2,50))
     {
-        fprintf(stderr, "Warning: sdl12-compat detected.\nWarning: The program might not work properly.\nWarning: Using SDL2 version is recommended.\n");
+        SDL_version linked_version;
+
+        SDL_GetVersion(&linked_version);
+        Game_SDLVersionNum = SDL_VERSIONNUM(linked_version.major, linked_version.minor, linked_version.patch);
     }
-#endif
 
     Game_NoCursor = SDL_CreateCursor(&Game_NoCursorData, &Game_NoCursorData, 8, 1, 0, 0);
 
@@ -1251,7 +918,7 @@ static int Game_Initialize(void)
         return -2;
     }
 
-    Game_FrameMemory = (uint8_t *) malloc(/*320*201*/ 65536*2);
+    Game_FrameMemory = (uint8_t *) x86_malloc(/*320*201*/ 65536*2);
     if (Game_FrameMemory == NULL)
     {
         fprintf(stderr, "Error: Not enough memory\n");
@@ -1259,15 +926,28 @@ static int Game_Initialize(void)
         return -3;
     }
 
-    Game_FrameBuffer = (uint8_t *) ((((uintptr_t) Game_FrameMemory) + 65535) & ~0xffff);
+    // 32-bit pointer to frame buffer must be aligned to 65536 bytes
+    {
+        PTR32(uint8_t) frame_buffer;
+        frame_buffer = Game_FrameMemory;
+        SET_PTR32_VALUE(frame_buffer, (GET_PTR32_VALUE(frame_buffer) + 65535) & ~(uint32_t)0xffff);
+        Game_FrameBuffer = frame_buffer;
+    }
     memset(Game_FrameBuffer, 0, 65536);
 
-/*	Game_ScreenWindow = (uint8_t *) malloc(65536);
-    if (Game_ScreenWindow == NULL)
+    if (sizeof(void *) > 4)
     {
-        fprintf(stderr, "Error: Not enough memory\n");
-        return -4;
-    }*/
+        Game_stdin = x86_malloc(3 * sizeof(void *));
+        if (Game_stdin == NULL)
+        {
+            fprintf(stderr, "Error: Not enough memory\n");
+            Game_Cleanup();
+            return -3;
+        }
+
+        Game_stdout = (void *)(sizeof(void *) + (uintptr_t)(void*)Game_stdin);
+        Game_stderr = (void *)(2 * sizeof(void *) + (uintptr_t)(void*)Game_stdin);
+    }
 
     Game_DisplaySem = SDL_CreateSemaphore(0);
     if (Game_DisplaySem == NULL)
@@ -1293,7 +973,7 @@ static int Game_Initialize(void)
         return -7;
     }
 
-    Zero_Segment = (uint8_t *) malloc(65536);
+    Zero_Segment = (uint8_t *) x86_malloc(65536);
     if (Zero_Segment == NULL)
     {
         fprintf(stderr, "Error: Not enough memory\n");
@@ -1304,9 +984,18 @@ static int Game_Initialize(void)
 
     Game_BuildRTable();
 
-    Game_stdin = stdin;
-    Game_stdout = stdout;
-    Game_stderr = stderr;
+    if ((sizeof(void *) > 4))
+    {
+        *(FILE **)(void *)Game_stdin = stdin;
+        *(FILE **)(void *)Game_stdout = stdout;
+        *(FILE **)(void *)Game_stderr = stderr;
+    }
+    else
+    {
+        Game_stdin = stdin;
+        Game_stdout = stdout;
+        Game_stderr = stderr;
+    }
 
     Game_Sound = 1;
     Game_Music = 1;
@@ -1327,14 +1016,15 @@ static void Game_Initialize2(void)
         Game_Sound = 0;
         Game_Music = 0;
 
+        frequency = Game_AudioRate;
+        format = Game_AudioFormat;
+        channels = Game_AudioChannels;
+
+        audio_ok = 0;
+
         if ( SDL_InitSubSystem(SDL_INIT_AUDIO) == 0 )
         {
-            frequency = Game_AudioRate;
-            format = Game_AudioFormat;
-            channels = Game_AudioChannels;
-
-            audio_ok = 0;
-#if SDL_VERSION_ATLEAST(2,0,0) && (SDL_VERSIONNUM(SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL) >= SDL_VERSIONNUM(2, 0, 2))
+#if (SDL_VERSIONNUM(SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL) >= SDL_VERSIONNUM(2, 0, 2))
             const SDL_version *link_version = Mix_Linked_Version();
             if (SDL_VERSIONNUM(link_version->major, link_version->minor, link_version->patch) >= SDL_VERSIONNUM(2,0,2))
             {
@@ -1370,7 +1060,19 @@ static void Game_Initialize2(void)
                                 ) == 0
                            )
                         {
-                            audio_ok = 1;
+                            if ( Mix_QuerySpec(&frequency, &format, &channels) )
+                            {
+#if defined(__DEBUG__)
+                                fprintf(stderr, "Audio rate: %i\n", frequency);
+                                fprintf(stderr, "Audio format: 0x%x\n", format);
+                                fprintf(stderr, "Audio channels: %i\n", channels);
+#endif
+                                audio_ok = 1;
+                            }
+                            else
+                            {
+                                Mix_CloseAudio();
+                            }
                         }
                     }
                 }
@@ -1402,27 +1104,48 @@ static void Game_Initialize2(void)
 
             if (audio_ok)
             {
+                void *stream;
+
                 Game_AudioRate = frequency;
                 Game_AudioFormat = format;
                 Game_AudioChannels = channels;
 
                 Mix_AllocateChannels(1);
 
+                if (Music)
+                {
+                    if ((Game_MidiSubsystem < 10) || (Game_MidiSubsystem > 20 && Game_MidiSubsystem <= 30))
+                    {
+                        Game_LoadMidiFiles = 1;
+                    }
+                    else if (Game_MidiSubsystem > 30)
+                    {
+                        stream = Game_fopen("C:\\SOUND\\ROLAND.CAT", "rb");
+                        if (stream == NULL)
+                        {
+                            Game_LoadMidiFiles = 1;
+                        }
+                        else
+                        {
+                            Game_fclose(stream);
+                        }
+                    }
+                }
+
                 if (Music && Game_MidiSubsystem)
                 {
 #if ((EXE_BUILD == EXE_COMBINED) || (EXE_BUILD == EXE_INTRO))
-                    // check for possible fallback to adlib
+                    // check for possible fallback to General MIDI songs
 #if (EXE_BUILD == EXE_COMBINED)
                     if (Game_PlayIntro)
 #endif
-                    if (Game_MidiSubsystem == 11 || Game_MidiSubsystem > 30)
+                    if (Game_MidiSubsystem == 11 || (Game_MidiSubsystem > 30 && !Game_LoadMidiFiles))
                     {
-                        FILE *f;
-                        f = Game_fopen("C:\\SOUND\\ROLAND.CAT", "rb");
-                        if (f != NULL)
+                        stream = Game_fopen("C:\\SOUND\\ROLAND.CAT", "rb");
+                        if (stream != NULL)
                         {
                             uint32_t num_files;
-                            if (fread(&num_files, 4, 1, f) == 1)
+                            if (Game_fread(&num_files, 4, 1, stream) == 1)
                             {
                                 num_files >>= 3;
                                 if (num_files <= 19)
@@ -1432,7 +1155,7 @@ static void Game_Initialize2(void)
                                 }
                             }
 
-                            Game_fclose(f);
+                            Game_fclose(stream);
                         }
                     }
 #endif
@@ -1455,8 +1178,6 @@ static void Game_Initialize2(void)
 
                 Game_Sound = Sound;
                 Game_Music = Music;
-
-                if (!Sound && !Music) Game_AudioMasterVolume = 0;
 
                 Mix_ChannelFinished(Game_ChannelFinished);
             }
@@ -1481,8 +1202,8 @@ static void Game_Initialize2(void)
 
 //senquack - SOUND STUFF
 //        Sound samples relative volume now configurable
-//        Mix_Volume(-1, Game_AudioMasterVolume);
-        Mix_Volume(-1, (Game_AudioMasterVolume * Game_AudioSampleVolume) >> 7);
+        Mix_Volume(-1, Game_AudioSampleVolume);
+        Game_InitializeSound();
     }
 
     if (Game_Music)
@@ -1492,33 +1213,31 @@ static void Game_Initialize2(void)
             Game_SoundCfg.MusicDriver = 0;          // adlib / soundblaster fm
             Game_SoundCfg.MusicBasePort = 0x0388;   // adlib base port
         }
-        else if ((Game_MidiSubsystem == 11 || Game_MidiSubsystem > 30) && !Game_MidiRemapGM2MT32)
+        else if ((Game_MidiSubsystem == 11 || (Game_MidiSubsystem > 30 && !Game_LoadMidiFiles)) && !Game_MidiRemapGM2MT32)
         {
             Game_SoundCfg.MusicDriver = 1;          // roland lapc-1 / mt32
             Game_SoundCfg.MusicBasePort = 0x0330;   // MT32 base port
         }
+        else if (Game_MidiSubsystem == 12)
+        {
+            Game_SoundCfg.MusicDriver = 3;          // soundblaster awe32
+            Game_SoundCfg.MusicBasePort = 0x0620;   // AWE32 base port
+        }
         else
         {
-            Game_SoundCfg.MusicDriver = 3;          // soundblaster awe32 / general midi
+            Game_SoundCfg.MusicDriver = 3;          // general midi
             Game_SoundCfg.MusicBasePort = 0x0330;   // GM base port
         }
 
 //senquack - SOUND STUFF
-//        Mix_VolumeMusic(Game_AudioMasterVolume);
         // Music loudness now configurable.
-        // On GP2X, AudioMasterVolume does nothing, overall volume is controlled by /dev/mixer.
-        Mix_VolumeMusic((Game_AudioMasterVolume * Game_AudioMusicVolume) >> 7);
+        Mix_VolumeMusic(Game_AudioMusicVolume);
     }
 
     Init_Display2();
     Init_Audio2();
     Init_Input2();
 
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    SDL_EnableUNICODE(1);
-#endif
-
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     if (Game_AdvancedScaling)
     {
         Scaler_ScaleFactor = Game_ScaleFactor;
@@ -1532,9 +1251,6 @@ static void Game_Initialize2(void)
         Scaler_ScaleTexture = 0;
         Scaler_ScaleFactor = 1;
     }
-#else
-    Game_AdvancedScaling = 0;
-#endif
 
     Game_VideoAspectX = ((320-1) << 16) / (Picture_Width-1);
     Game_VideoAspectY = ((200-1) << 16) / (Picture_Height-1);
@@ -1542,14 +1258,7 @@ static void Game_Initialize2(void)
     Game_VideoAspectXR = ((Picture_Width-1) << 16) / (320-1);
     Game_VideoAspectYR = ((Picture_Height-1) << 16) / (200-1);
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
-#if !SDL_VERSION_ATLEAST(2,0,0)
-    if (Game_UseOpenGL)
-#endif
-    {
-        Game_TextureData = malloc(Render_Width * Render_Height * Display_Bitsperpixel / 8);
-    }
-#endif
+    Game_TextureData = malloc(Render_Width * Render_Height * Display_Bitsperpixel / 8);
 }
 
 static void Game_Event_Loop(void)
@@ -1562,33 +1271,17 @@ static void Game_Event_Loop(void)
     uint32_t AppInputFocus;
     uint32_t AppActive;
     int FlipActive, CreateAfterFlip, DestroyAfterFlip, NumEvents, PumpEvents;
-#if SDL_VERSION_ATLEAST(2,0,0)
     int ClearRenderer, MouseOldX, MouseOldY;
-#endif
 
 
-    TimerThread = SDL_CreateThread(
-        Game_TimerThread,
-#if SDL_VERSION_ATLEAST(2,0,0)
-        "timer",
-#endif
-        NULL
-    );
-
+    TimerThread = SDL_CreateThread(Game_TimerThread, "timer", NULL);
     if (TimerThread == NULL)
     {
         fprintf(stderr, "Error: Unable to start timer thread\n");
         return;
     }
 
-    FlipThread = SDL_CreateThread(
-        Game_FlipThread,
-#if SDL_VERSION_ATLEAST(2,0,0)
-        "flip",
-#endif
-        NULL
-    );
-
+    FlipThread = SDL_CreateThread(Game_FlipThread, "flip", NULL);
     if (FlipThread == NULL)
     {
         fprintf(stderr, "Error: Unable to start flip thread\n");
@@ -1601,14 +1294,7 @@ static void Game_Event_Loop(void)
         return;
     }
 
-    MainThread = SDL_CreateThread(
-        Game_MainThread,
-#if SDL_VERSION_ATLEAST(2,0,0)
-        "main",
-#endif
-        NULL
-    );
-
+    MainThread = SDL_CreateThread(Game_MainThread, "main", NULL);
     if (MainThread == NULL)
     {
         fprintf(stderr, "Error: Unable to start main thread\n");
@@ -1624,24 +1310,12 @@ static void Game_Event_Loop(void)
         return;
     }
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     AppMouseFocus = 1;
     AppInputFocus = 1;
     AppActive = 1;
     ClearRenderer = 0;
     MouseOldX = 0;
     MouseOldY = 0;
-#else
-    {
-        uint32_t AppState;
-
-        AppState = SDL_GetAppState();
-
-        AppMouseFocus = AppState & SDL_APPMOUSEFOCUS;
-        AppInputFocus = AppState & SDL_APPINPUTFOCUS;
-        AppActive = AppState & SDL_APPACTIVE;
-    }
-#endif
 
     FlipActive = 0;
     CreateAfterFlip = 0;
@@ -1649,13 +1323,9 @@ static void Game_Event_Loop(void)
 
     PumpEvents = 1;
 
-    while (!Thread_Exited)
+    while (!Thread_Exited && !Thread_Exit)
     {
-#if SDL_VERSION_ATLEAST(2,0,0)
         NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
-#else
-        NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_ALLEVENTS);
-#endif
         if (NumEvents <= 0) // error or no events
         {
             if (PumpEvents)
@@ -1675,7 +1345,6 @@ static void Game_Event_Loop(void)
 
         switch(event.type)
         {
-        #if SDL_VERSION_ATLEAST(2,0,0)
             case SDL_WINDOWEVENT:
                 switch (event.window.event)
                 {
@@ -1719,35 +1388,10 @@ static void Game_Event_Loop(void)
 
                 break;
                 // case SDL_WINDOWEVENT:
-        #else
-            case SDL_ACTIVEEVENT:
-                if (event.active.state & SDL_APPMOUSEFOCUS)
-                {
-                    AppMouseFocus = event.active.gain;
-                }
-                if (event.active.state & SDL_APPINPUTFOCUS)
-                {
-                    AppInputFocus = event.active.gain;
-                }
-                if (event.active.state & SDL_APPACTIVE)
-                {
-                    AppActive = event.active.gain;
-                }
-
-                break;
-                // case SDL_ACTIVEEVENT:
-        #endif
 
             case SDL_KEYDOWN:
             case SDL_KEYUP:
-                if (
-                #if SDL_VERSION_ATLEAST(2,0,0)
-                    !event.key.repeat &&
-                    Game_Window != NULL
-                #else
-                    Game_Screen != NULL
-                #endif
-                    && AppActive && AppInputFocus)
+                if (!event.key.repeat && Game_Window != NULL && AppActive && AppInputFocus)
                 {
                     if (VK_Visible)
                     {
@@ -1777,7 +1421,6 @@ static void Game_Event_Loop(void)
                 break;
                 // case SDL_KEYDOWN, SDL_KEYUP:
             case SDL_MOUSEMOTION:
-            #if SDL_VERSION_ATLEAST(2,0,0)
                 if ((event.motion.xrel == 0) && (event.motion.yrel == 0))
                 {
                     // warping the mouse doesn't fill relative motion attributes in SDL2
@@ -1786,14 +1429,8 @@ static void Game_Event_Loop(void)
                 }
                 MouseOldX = event.motion.x;
                 MouseOldY = event.motion.y;
-            #endif
-                if (
-                #if SDL_VERSION_ATLEAST(2,0,0)
-                    Game_Window != NULL
-                #else
-                    Game_Screen != NULL
-                #endif
-                    && AppActive && AppInputFocus && AppMouseFocus)
+
+                if (Game_Window != NULL && AppActive && AppInputFocus && AppMouseFocus)
                 {
                     if (VK_Visible)
                     {
@@ -1828,11 +1465,7 @@ static void Game_Event_Loop(void)
 
                             if ((newx != event.motion.x) || (newy != event.motion.y))
                             {
-                            #if SDL_VERSION_ATLEAST(2,0,0)
                                 SDL_WarpMouseInWindow(Game_Window, newx, newy);
-                            #else
-                                SDL_WarpMouse(newx, newy);
-                            #endif
                             }
                         }
 
@@ -1849,13 +1482,7 @@ static void Game_Event_Loop(void)
                 // case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONUP:
             case SDL_MOUSEBUTTONDOWN:
-                if (
-                #if SDL_VERSION_ATLEAST(2,0,0)
-                    Game_Window != NULL
-                #else
-                    Game_Screen != NULL
-                #endif
-                    && AppActive && AppInputFocus && AppMouseFocus)
+                if (Game_Window != NULL && AppActive && AppInputFocus && AppMouseFocus)
                 {
                     if (VK_Visible)
                     {
@@ -1896,35 +1523,10 @@ static void Game_Event_Loop(void)
                             Game_MouseButtons &= ~buttonval;
                         }
                     }
-                #if SDL_VERSION_ATLEAST(2,0,0)
-                    // handled below
-                #else
-                    else if (event.button.button == SDL_BUTTON_WHEELUP)
-                    {
-                        Display_ChangeMode = 1;
-                    }
-                    else if (event.button.button == SDL_BUTTON_WHEELDOWN)
-                    {
-                        Display_ChangeMode = -1;
-                    }
-                #endif
                 }
 
                 break;
                 // case SDL_MOUSEBUTTONUP, SDL_MOUSEBUTTONDOWN:
-        #if SDL_VERSION_ATLEAST(2,0,0)
-            case SDL_MOUSEWHEEL:
-                if (event.wheel.y > 0)
-                {
-                    Display_ChangeMode = 1;
-                }
-                else if (event.wheel.y < 0)
-                {
-                    Display_ChangeMode = -1;
-                }
-                break;
-                // case SDL_MOUSEWHEEL:
-        #endif
             case SDL_QUIT:
                 /* todo: question */
 
@@ -1953,10 +1555,6 @@ static void Game_Event_Loop(void)
                         else
                         {
                             Game_Display_Create();
-                        #if !SDL_VERSION_ATLEAST(2,0,0)
-                            // workaround for sdl12-compat
-                            AppActive = SDL_GetAppState() & SDL_APPACTIVE;
-                        #endif
                         }
 
                         break;
@@ -1976,18 +1574,9 @@ static void Game_Event_Loop(void)
                         // case EC_DISPLAY_DESTROY:
 
                     case EC_DISPLAY_FLIP_START:
-                        if (!FlipActive &&
-                        #if SDL_VERSION_ATLEAST(2,0,0)
-                            Game_Window != NULL
-                        #else
-                            Game_Screen != NULL
-                        #endif
-                            )
+                        if (!FlipActive && Game_Window != NULL)
                         {
                             FlipActive = 1;
-
-                            /* ??? */
-/*								SDL_LockSurface(Game_Screen);*/
 
                             SDL_SemPost(Game_FlipSem);
                         }
@@ -1998,7 +1587,6 @@ static void Game_Event_Loop(void)
                     case EC_DISPLAY_FLIP_FINISH:
                         if (FlipActive)
                         {
-                        #if SDL_VERSION_ATLEAST(2,0,0)
                             if (Game_DisplayActive)
                             {
                                 if (Scaler_ScaleTextureData)
@@ -2039,85 +1627,6 @@ static void Game_Event_Loop(void)
                                     Game_CurrentTexture = 0;
                                 }
                             }
-                        #elif defined(ALLOW_OPENGL)
-                            if (Game_UseOpenGL && Game_DisplayActive)
-                            {
-                                glBindTexture(GL_TEXTURE_2D, Game_GLTexture[Game_CurrentTexture]);
-
-                                if (Scaler_ScaleTextureData)
-                                {
-                                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Scaler_ScaleFactor * Render_Width, Scaler_ScaleFactor * Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_ScaledTextureData);
-                                }
-                                else
-                                {
-                                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, Render_Width, Render_Height, GL_BGRA, (Display_Bitsperpixel == 32)?GL_UNSIGNED_INT_8_8_8_8_REV:GL_UNSIGNED_SHORT_5_6_5_REV, Game_TextureData);
-                                }
-
-                                static const GLfloat QuadVertices[2*4] = {
-                                    -1.0f,  1.0f,
-                                     1.0f,  1.0f,
-                                     1.0f, -1.0f,
-                                    -1.0f, -1.0f,
-                                };
-                                static const GLfloat QuadTexCoords[2*4] = {
-                                    0.0f, 0.0f,
-                                    1.0f, 0.0f,
-                                    1.0f, 1.0f,
-                                    0.0f, 1.0f
-                                };
-                                static const GLfloat QuadScaleTexCoords[2*4] = {
-                                    0.0f, 1.0f,
-                                    1.0f, 1.0f,
-                                    1.0f, 0.0f,
-                                    0.0f, 0.0f,
-                                };
-
-                                glEnable(GL_TEXTURE_2D);
-
-                                glEnableClientState(GL_VERTEX_ARRAY);
-                                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-                                if (Scaler_ScaleTexture)
-                                {
-                                    gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, Game_GLFramebuffer[Game_CurrentTexture]);
-
-                                    glViewport(0, 0, Scaler_ScaledTextureWidth, Scaler_ScaledTextureHeight);
-
-                                    glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
-                                    glTexCoordPointer(2, GL_FLOAT, 0, &(QuadScaleTexCoords[0]));
-                                    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-                                    gl_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-
-                                    glViewport(Picture_Position_UL_X, Picture_Position_UL_Y, Picture_Width, Picture_Height);
-
-                                    glBindTexture(GL_TEXTURE_2D, Game_GLScaledTexture[Game_CurrentTexture]);
-                                }
-
-                                glVertexPointer(2, GL_FLOAT, 0, &(QuadVertices[0]));
-                                glTexCoordPointer(2, GL_FLOAT, 0, &(QuadTexCoords[0]));
-                                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-                                VirtualKeyboard_Draw();
-
-                                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-                                glDisableClientState(GL_VERTEX_ARRAY);
-
-                                glDisable(GL_TEXTURE_2D);
-
-                                SDL_GL_SwapBuffers();
-
-                                Game_CurrentTexture++;
-                                if (Game_CurrentTexture > 2)
-                                {
-                                    Game_CurrentTexture = 0;
-                                }
-                            }
-                        #endif
-
-                            /* ??? */
-/*								SDL_UnlockSurface(Game_Screen);
-                            SDL_Flip(Game_Screen);*/
 
                             FlipActive = 0;
 
@@ -2137,37 +1646,26 @@ static void Game_Event_Loop(void)
                         break;
                         // case EC_DISPLAY_FLIP_FINISH:
                     case EC_PROGRAM_QUIT:
-                        if (Thread_Exit) exit(1);
+                        if (!Thread_Exit)
+                        {
+                            Thread_Exit = 1;
 
-                        Thread_Exit = 1;
+                            SDL_SemPost(Game_FlipSem);
 
-                        SDL_SemPost(Game_FlipSem);
+                            SDL_WaitThread(FlipThread, NULL);
 
-                        SDL_WaitThread(FlipThread, NULL);
+                            SDL_WaitThread(MainThread, NULL);
 
-                        SDL_WaitThread(MainThread, NULL);
-
-                        SDL_WaitThread(TimerThread, NULL);
+                            SDL_WaitThread(TimerThread, NULL);
+                        }
 
                         break;
                         // case EC_PROGRAM_QUIT:
                     case EC_MOUSE_MOVE:
-                        {
-                        #if SDL_VERSION_ATLEAST(2,0,0)
-                            SDL_WarpMouseInWindow(Game_Window, Game_MouseX + (intptr_t) event.user.data1, Game_MouseY + (intptr_t) event.user.data2);
-                        #else
-                            SDL_WarpMouse(Game_MouseX + (intptr_t) event.user.data1, Game_MouseY + (intptr_t) event.user.data2);
-                        #endif
-                        }
+                        SDL_WarpMouseInWindow(Game_Window, Game_MouseX + (int)(intptr_t) event.user.data1, Game_MouseY + (int)(intptr_t) event.user.data2);
                         break;
                     case EC_MOUSE_SET:
-                        {
-                        #if SDL_VERSION_ATLEAST(2,0,0)
-                            SDL_WarpMouseInWindow(Game_Window, (intptr_t) event.user.data1, (intptr_t) event.user.data2);
-                        #else
-                            SDL_WarpMouse((intptr_t) event.user.data1, (intptr_t) event.user.data2);
-                        #endif
-                        }
+                        SDL_WarpMouseInWindow(Game_Window, (int)(intptr_t) event.user.data1, (int)(intptr_t) event.user.data2);
                         break;
                     case EC_GET_MOUSE_POS:
                         ((int32_t *) event.user.data1)[0] = Game_MouseX;
@@ -2175,23 +1673,9 @@ static void Game_Event_Loop(void)
                         break;
                     //senquack - need this to allow macros to behave in battlescape
                     case EC_DELAY:
-                        SDL_Delay((intptr_t) event.user.data1);
+                        SDL_Delay((Uint32)(uintptr_t) event.user.data1);
                         break;
                         // case EC_DELAY:
-
-                    case EC_SET_VOLUME:
-//senquack - SOUND STUFF
-                        if (Game_Sound)
-                        {
-                            // Sound sample relative volume now configurable:
-                            Mix_Volume(-1, (Game_AudioSampleVolume * Game_AudioMasterVolume) >> 7);
-                        }
-
-                        if (Game_Music)
-                        {
-                            Game_SetMusicVolume();
-                        }
-                        break;
                 }
 
                 break;
@@ -2206,6 +1690,32 @@ static void Game_Event_Loop(void)
 
 int main (int argc, char *argv[])
 {
+    if (sizeof(PTR32(void)) != 4)
+    {
+        fprintf(stderr, "Error: The program wasn't compiled correctly for %i-bits\n", (int) (8 * sizeof(void*)));
+        return 0;
+    }
+
+#ifdef PTROFS_64BIT
+    if (0 != initialize_pointer_offset())
+    {
+        fprintf(stderr, "Error initializing pointer offset\n");
+        return 1;
+    }
+#endif
+
+#if !defined(x86_malloc)
+    if (0 != x86_init_malloc())
+    {
+        fprintf(stderr, "Error initializing memory allocator\n");
+        return 1;
+    }
+#endif
+
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_InitThreadConcurencyLibs();
+#endif
+
     main_argv = argv;
 
     Game_ConfigFilename[0] = 0;
@@ -2274,6 +1784,14 @@ int main (int argc, char *argv[])
     Cleanup_Input();
     Cleanup_Audio();
     Cleanup_Display();
+
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    Game_CloseThreadConcurency();
+#endif
+
+#if !defined(x86_malloc)
+    x86_deinit_malloc();
+#endif
 
     return Game_ExitCode;
 }

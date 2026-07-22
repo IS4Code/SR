@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2020-2024 Roman Pauer
+ *  Copyright (C) 2020-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -40,6 +40,9 @@
     #include <dlfcn.h>
 #endif
 
+#if !defined(WAVE_FORMAT_96S16)
+    #define WAVE_FORMAT_96S16 0x00080000
+#endif
 
 #define MS_STOPPED 0
 #define MS_OPENED  1
@@ -123,7 +126,7 @@ static DWORD WINAPI MP_ProcessData(LPVOID lpParameter)
 
                             write_buffer = MP_sequence.write_buffer & 1;
 
-                            MP_sequence.bytes_left[write_buffer] = MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
+                            MP_sequence.bytes_left[write_buffer] = (uint16_t)MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
                             if (MP_sequence.bytes_left[write_buffer] != BUFFER_SIZE)
                             {
                                 MP_functions.rewind_midi(MP_sequence.midi);
@@ -174,7 +177,7 @@ static DWORD WINAPI MP_ProcessData(LPVOID lpParameter)
 
                         write_buffer = MP_sequence.write_buffer & 1;
 
-                        MP_sequence.bytes_left[write_buffer] = MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
+                        MP_sequence.bytes_left[write_buffer] = (uint16_t)MP_functions.get_data(MP_sequence.midi, (char *) MP_sequence.buffer[write_buffer], BUFFER_SIZE);
 
                         if (MP_sequence.read_buffer == MP_sequence.write_buffer)
                         {
@@ -418,8 +421,8 @@ static int MP2_Startup(void)
     #define free_library FreeLibrary
     #define get_proc_address GetProcAddress
 
-    if (Audio_MidiSubsystem == 11) plugin_name = ".\\midi2-windows.dll";
-    else if (Audio_MidiSubsystem == 12) plugin_name = ".\\midi2-alsa.dll";
+    if (Audio_MidiSubsystem == 11 || Audio_MidiSubsystem == 21) plugin_name = ".\\midi2-windows.dll";
+    else if (Audio_MidiSubsystem == 12 || Audio_MidiSubsystem == 22) plugin_name = ".\\midi2-alsa.dll";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -438,8 +441,8 @@ static int MP2_Startup(void)
     #define free_library dlclose
     #define get_proc_address dlsym
 
-    if (Audio_MidiSubsystem == 11) plugin_name = "./midi2-windows.so";
-    else if (Audio_MidiSubsystem == 12) plugin_name = "./midi2-alsa.so";
+    if (Audio_MidiSubsystem == 11 || Audio_MidiSubsystem == 21) plugin_name = "./midi2-windows.so";
+    else if (Audio_MidiSubsystem == 12 || Audio_MidiSubsystem == 22) plugin_name = "./midi2-alsa.so";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -468,6 +471,12 @@ static int MP2_Startup(void)
 
     memset(&MP2_parameters, 0, sizeof(MP2_parameters));
     MP2_parameters.midi_device_name = Audio_MidiDevice;
+    if (Audio_MidiSubsystem > 20)
+    {
+        MP2_parameters.midi_type = 2;
+    }
+    MP2_parameters.mt32_delay = Audio_MT32DelaySysex;
+    MP2_parameters.mt32_display_text = "  Battle Isle 2220";
 
     if (MP2_initialize(&MP2_parameters, &MP2_functions))
     {
@@ -506,7 +515,7 @@ static void MP2_Shutdown(void)
 }
 
 
-int midi_PluginStartup(void) __attribute__((noinline));
+NOINLINE int midi_PluginStartup(void);
 int midi_PluginStartup(void)
 {
     if (Audio_MidiSubsystem == 0) return 0;
@@ -585,7 +594,7 @@ static int load_midi(const char *filename)
 }
 
 
-int midi_OpenSDIMusic(const char *filename)
+int CCALL midi_OpenSDIMusic(const char *filename)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -655,7 +664,7 @@ int midi_OpenSDIMusic(const char *filename)
     return 0;
 }
 
-unsigned int midi_GetSDIMusicID(void)
+unsigned int CCALL midi_GetSDIMusicID(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -675,7 +684,7 @@ unsigned int midi_GetSDIMusicID(void)
     return (midi_status != MS_STOPPED)?1:0;
 }
 
-int midi_PlaySDIMusic(void)
+int CCALL midi_PlaySDIMusic(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -727,7 +736,7 @@ int midi_PlaySDIMusic(void)
     return 0;
 }
 
-int midi_CloseSDIMusic(void)
+int CCALL midi_CloseSDIMusic(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -778,7 +787,7 @@ int midi_CloseSDIMusic(void)
     return 0;
 }
 
-int midi_IsPlaying(unsigned int musicID)
+int CCALL midi_IsPlaying(unsigned int musicID)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -816,7 +825,7 @@ int midi_IsPlaying(unsigned int musicID)
 }
 
 
-int midi_OpenTestMusic(void)
+int CCALL midi_OpenTestMusic(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -829,7 +838,7 @@ int midi_OpenTestMusic(void)
     return midi_OpenSDIMusic("TST.MID");
 }
 
-int midi_PlayTestMusic(void)
+int CCALL midi_PlayTestMusic(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -842,7 +851,7 @@ int midi_PlayTestMusic(void)
     return midi_PlaySDIMusic();
 }
 
-int midi_CloseTestMusic(void)
+int CCALL midi_CloseTestMusic(void)
 {
     // change:
     if (Audio_MidiSubsystem == 0)
@@ -856,15 +865,15 @@ int midi_CloseTestMusic(void)
 }
 
 
-int midi_GetErrorString(int error, char *text, unsigned int length)
+int CCALL midi_GetErrorString(int error, char *text, unsigned int length)
 {
+    const char *errorText;
+
     // change:
     if (Audio_MidiSubsystem == 0)
     {
         return mciGetErrorStringA(error, text, length);
     }
-
-    const char *errorText;
 
     if (text == NULL) return 0;
 

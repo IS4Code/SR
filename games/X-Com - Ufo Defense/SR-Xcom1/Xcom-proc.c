@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,11 +24,14 @@
 
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <malloc.h>
 #include <fcntl.h>		/* needed for procedure Game_openFlags */
 #include <ctype.h>
 #include <time.h>
@@ -36,11 +39,12 @@
 #include "Game_vars.h"
 #include "Xcom-proc.h"
 #include "Xcom-timer.h"
+#include "Game_memory.h"
 #include "Game_misc.h"
 #include "Game_thread.h"
 
 
-void Game_Set_errno_val(void)
+void CCALL Game_Set_errno_val(void)
 {
     int err;
 
@@ -49,7 +53,7 @@ void Game_Set_errno_val(void)
     Game_Set_errno_val_num((err >= 0 && err < 256)?(errno_rtable[err]):(err));
 }
 
-void Game_Set_errno_val_num(int32_t value)
+void CCALL Game_Set_errno_val_num(int32_t value)
 {
     switch (Game_Executable)
     {
@@ -73,7 +77,7 @@ void Game_Set_errno_val_num(int32_t value)
     }
 }
 
-int32_t Game_checkch(void)
+int32_t CCALL Game_checkch(void)
 {
     if (Game_KBufferWrite == Game_KBufferRead || SDL_GetTicks() - Game_LastKeyStroke < GAME_KEYBOARD_TYPE_RATE)
     {
@@ -85,7 +89,7 @@ int32_t Game_checkch(void)
     }
 }
 
-int32_t Game_getch(void)
+int32_t CCALL Game_getch(void)
 {
     int ret;
 
@@ -103,12 +107,12 @@ int32_t Game_getch(void)
     return ret;
 }
 
-int32_t Game_filelength2(FILE *f)
+int32_t CCALL Game_filelength2(void *stream)
 {
     off_t origpos, endpos;
     int fd;
 
-    fd = fileno(f);
+    fd = fileno((sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
     origpos = lseek(fd, 0, SEEK_CUR);
     if (origpos < 0) return -1;
 
@@ -118,7 +122,7 @@ int32_t Game_filelength2(FILE *f)
     return (endpos < 0 || endpos > 2147483647) ? -1 : endpos;
 }
 
-void *Game_malloc(uint32_t size)
+void * CCALL Game_malloc(uint32_t size)
 {
     uint8_t *ptr, *out;
 
@@ -128,14 +132,14 @@ void *Game_malloc(uint32_t size)
 
     // X-Com has a few buffer underflows
     // That's why I allocate 4kB more memory before the resulting pointer and 4kB after (for overflows)
-    ptr = (uint8_t *) malloc(size + 8192);
+    ptr = (uint8_t *) x86_malloc(size + 8192);
     if (ptr == NULL) return NULL;
 
     out = ptr + 4096;
 
     if (!Game_list_insert(&Game_MallocList, (uintptr_t)out))
     {
-        free(ptr);
+        x86_free(ptr);
         return NULL;
     }
 
@@ -144,24 +148,24 @@ void *Game_malloc(uint32_t size)
     return out;
 }
 
-void Game_free(void *ptr)
+void CCALL Game_free(void *ptr)
 {
     if (ptr == NULL) return;
 
     Game_list_remove(&Game_MallocList, (uintptr_t)ptr);
-    free(((uint8_t *) ptr) - 4096);
+    x86_free(((uint8_t *) ptr) - 4096);
 }
 
 void *Game_AllocateMemory(uint32_t size)
 {
     void *mem;
 
-    mem = malloc(size);
+    mem = x86_malloc(size);
     if (mem == NULL) return NULL;
 
     if (!Game_list_insert(&Game_AllocateMemoryList, (uintptr_t)mem))
     {
-        free(mem);
+        x86_free(mem);
         return NULL;
     }
 
@@ -173,21 +177,21 @@ void Game_FreeMemory(void *mem)
     if (mem == NULL) return;
 
     Game_list_remove(&Game_AllocateMemoryList, (uintptr_t)mem);
-    free(mem);
+    x86_free(mem);
 }
 
-int32_t Game_time(int32_t *tloc)
+int32_t CCALL Game_time(int32_t *tloc)
 {
     time_t t;
 
     t = time(NULL);
 
-    if (tloc != NULL) *tloc = t;
+    if (tloc != NULL) *tloc = (int32_t)t;
 
-    return t;
+    return (int32_t)t;
 }
 
-int32_t Game_dlseek(int32_t fd, int32_t offset, int32_t whence)
+int32_t CCALL Game_dlseek(int32_t fd, int32_t offset, int32_t whence)
 {
     off_t curpos;
 
@@ -196,40 +200,89 @@ int32_t Game_dlseek(int32_t fd, int32_t offset, int32_t whence)
     return (curpos < 0 || curpos > 2147483647) ? -1 : curpos;
 }
 
-int32_t Game_dread(void *buf, int32_t count, int32_t fd)
+int32_t CCALL Game_dread(void *buf, int32_t count, int32_t fd)
 {
     ssize_t rcount;
 
     rcount = read(fd, buf, count);
 
-    return (rcount < 0)?0:rcount;
+    return (rcount < 0)?0:(int32_t)rcount;
 }
 
 
-void Game_dclose(int32_t fd)
+void CCALL Game_dclose(int32_t fd)
 {
     Game_list_remove(&Game_DopenList, fd);
     close(fd);
 }
 
-int32_t Game_fclose(FILE *fp)
+static int32_t Game_fclose2(void *stream)
 {
+    FILE *fp;
     int ret;
 
-    Game_list_remove(&Game_FopenList, (uintptr_t)fp);
+    if ((sizeof(void *) > 4))
+    {
+        fp = *(FILE **)stream;
+        x86_free(stream);
+    }
+    else fp = (FILE *)stream;
+
     ret = fclose(fp);
     Game_Set_errno_val();
 
     return ret;
 }
 
-int32_t Game_fcloseall(void)
+int32_t CCALL Game_fclose(void *stream)
 {
-    Game_list_clear(&Game_FopenList, (void (*)(uintptr_t)) &fclose);
+    Game_list_remove(&Game_FopenList, (uintptr_t)stream);
+
+    return Game_fclose2(stream);
+}
+
+int32_t CCALL Game_fcloseall(void)
+{
+    Game_list_clear(&Game_FopenList, (void (*)(uintptr_t)) &Game_fclose2);
     return 0;
 }
 
-void Game_SlowDownMainLoop(void)
+int32_t CCALL Game_feof(void *stream)
+{
+    return feof((sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+int32_t CCALL Game_fflush(void *stream)
+{
+    return fflush((sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+int32_t CCALL Game_fgetc(void *stream)
+{
+    return fgetc((sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+int32_t CCALL Game_fputc(int32_t c, void *stream)
+{
+    return fputc(c, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+int32_t CCALL Game_fputs(const char *s, void *stream)
+{
+    return fputs(s, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+uint32_t CCALL Game_fread(void *ptr, uint32_t size, uint32_t nmemb, void *stream)
+{
+    return (uint32_t)fread(ptr, size, nmemb, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+uint32_t CCALL Game_fwrite(const void *ptr, uint32_t size, uint32_t nmemb, void *stream)
+{
+    return (uint32_t)fwrite(ptr, size, nmemb, (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream);
+}
+
+void CCALL Game_SlowDownMainLoop(void)
 {
     static uint32_t lasttick = 0;
 
@@ -253,7 +306,7 @@ void Game_SlowDownMainLoop(void)
     }
 }
 
-void Game_SlowDownScrolling(void)
+void CCALL Game_SlowDownScrolling(void)
 {
     static uint32_t lasttick = 0;
 
@@ -271,7 +324,7 @@ void Game_SlowDownScrolling(void)
     }
 }
 
-void Game_Sync(void)
+void CCALL Game_Sync(void)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "sync\n");
@@ -283,7 +336,7 @@ void Game_Sync(void)
 #endif
 }
 
-void Game_WaitVerticalRetraceTicks(const int32_t ticks)
+void CCALL Game_WaitVerticalRetraceTicks(const int32_t ticks)
 {
     uint32_t VSyncTick;
 

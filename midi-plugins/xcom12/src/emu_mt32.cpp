@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2021 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -32,7 +32,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <strings.h>
+#include <string.h>
 #include <mt32emu/mt32emu.h>
 #include "emu_mt32.h"
 
@@ -99,6 +99,66 @@ static char const *check_file(char const *filename)
     }
 }
 
+static MT32Emu::Bit8u *read_file_content(char const *filename, long int *filesize)
+{
+#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
+    HANDLE f;
+    MT32Emu::Bit8u *buf;
+    DWORD losize, hisize;
+
+    f = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE) return NULL;
+
+    losize = GetFileSize(f, &hisize);
+    if (losize == INVALID_FILE_SIZE || losize == 0 || hisize != 0) goto error1;
+
+    buf = (MT32Emu::Bit8u *)malloc(losize);
+    if (buf == NULL) goto error1;
+
+    if (!ReadFile(f, buf, losize, &hisize, NULL)) goto error2;
+    if (hisize != losize) goto error2;
+
+    CloseHandle(f);
+    *filesize = losize;
+    return buf;
+
+error2:
+    free(buf);
+error1:
+    CloseHandle(f);
+    return NULL;
+#else
+    FILE *f;
+    MT32Emu::Bit8u *buf;
+    long int size;
+
+    f = fopen(filename, "rb");
+    if (f == NULL) return NULL;
+
+    if (0 != fseek(f, 0, SEEK_END)) goto error1;
+
+    size = ftell(f);
+    if (size <= 0) goto error1;
+
+    if (0 != fseek(f, 0, SEEK_SET)) goto error1;
+
+    buf = (MT32Emu::Bit8u *)malloc(size);
+    if (buf == NULL) goto error1;
+
+    if ((unsigned long int)size != fread(buf, 1, size, f)) goto error2;
+
+    fclose(f);
+    *filesize = size;
+    return buf;
+
+error2:
+    free(buf);
+error1:
+    fclose(f);
+    return NULL;
+#endif
+}
+
 extern "C" {
 
 int emu_mt32_init(unsigned int samplerate, char const *mt32_roms)
@@ -115,7 +175,7 @@ int emu_mt32_init(unsigned int samplerate, char const *mt32_roms)
         return 2;
     }
 
-    int pathlen = strlen(mt32_roms);
+    size_t pathlen = strlen(mt32_roms);
     if ((pathlen >= 4078) || (pathlen <= 1))
     {
         return 3;
@@ -223,21 +283,21 @@ int emu_mt32_init(unsigned int samplerate, char const *mt32_roms)
     return_data[0] = 0;
     return_data[1] = OUT_READY;
     lastmidimode = midimode = 0;
-    message_data[2] = 0;
     message_data[3] = 0;
     message_offset = 1;
     sysex_offset = 1;
 
     // init
-    MT32Emu::FileStream controlROMFile;
-    MT32Emu::FileStream pcmROMFile;
+    MT32Emu::Bit8u *controlROMBUffer, *pcmROMBuffer;
+    long int controlROMSize, pcmROMSize;
 
     strcpy(fileptr, romnames[control_rom]);
     if (control_rom_lower)
     {
         strlower(fileptr);
     }
-    if (!controlROMFile.open(pathname))
+    controlROMBUffer = read_file_content(pathname, &controlROMSize);
+    if (controlROMBUffer == NULL)
     {
         return 5;
     }
@@ -247,20 +307,30 @@ int emu_mt32_init(unsigned int samplerate, char const *mt32_roms)
     {
         strlower(fileptr);
     }
-    if (!pcmROMFile.open(pathname))
+    pcmROMBuffer = read_file_content(pathname, &pcmROMSize);
+    if (pcmROMBuffer == NULL)
     {
+        free(controlROMBUffer);
         return 6;
     }
+
+    MT32Emu::ArrayFile controlROMFile(controlROMBUffer, controlROMSize);
+    MT32Emu::ArrayFile pcmROMFile(pcmROMBuffer, pcmROMSize);
 
     const MT32Emu::ROMImage *controlROMImage = MT32Emu::ROMImage::makeROMImage(&controlROMFile);
     const MT32Emu::ROMImage *pcmROMImage = MT32Emu::ROMImage::makeROMImage(&pcmROMFile);
     synth = new MT32Emu::Synth(&reportHandler);
     if (!synth->open(*controlROMImage, *pcmROMImage))
     {
+        free(pcmROMBuffer);
+        free(controlROMBUffer);
         return 7;
     }
     MT32Emu::ROMImage::freeROMImage(controlROMImage);
     MT32Emu::ROMImage::freeROMImage(pcmROMImage);
+
+    free(pcmROMBuffer);
+    free(controlROMBUffer);
 
     return 0;
 }
@@ -294,6 +364,7 @@ restart_switch:
                 case 0x0c: // Program Change Event
                 case 0x0d: // Channel Aftertouch Event
                     message_data[0] = value;
+                    message_data[2] = 0;
                     lastmidimode = midimode = 1;
                     return;
 

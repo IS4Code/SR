@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,13 +24,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Warcraft-int2.h"
 #include "Game_thread.h"
 #include "Game-int2.h"
 
-uint32_t Game_int386x(
+uint32_t CCALL Game_int386x(
 	const uint32_t IntNum,
 	const Game_REGS *in_regs,
 	Game_REGS *out_regs,
@@ -86,8 +85,8 @@ uint32_t Game_int386x(
 			{
 				case 0x0500:
 				// GET FREE MEMORY INFORMATION
-					memset((void *)(uintptr_t) EDI, -1, 0x30);
-					*((uint32_t *)(uintptr_t)EDI) = GAME_MAX_FREE_MEMORY;
+					memset((void*)PTR_EDI, -1, 0x30);
+					*((uint32_t *)(void*)PTR_EDI) = GAME_MAX_FREE_MEMORY;
 
                     CLEAR_FLAG(CARRY_FLAG);
 
@@ -124,7 +123,7 @@ uint32_t Game_int386x(
 
 						for (i = 0; i < 8; i++)
 						{
-							Game_MouseTable[i] = NULL;
+							Game_MouseTable[i] = 0;
 						}
 					}
 
@@ -157,7 +156,7 @@ uint32_t Game_int386x(
 						{
 							if (mask & 1)
 							{
-								Game_MouseTable[i] = (void *)(uintptr_t) EDX;
+								Game_MouseTable[i] = EDX;
 							}
 							mask = mask >> 1;
 						}

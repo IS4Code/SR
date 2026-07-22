@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,8 +24,8 @@
 
 #include "llasm_cpu.h"
 
-extern volatile uint32_t Game_TimerTick;
-extern volatile uint32_t Game_TimerRun;
+EXTERNCVAR volatile uint32_t Game_TimerTick;
+EXTERNCVAR volatile uint32_t Game_TimerRun;
 
 #ifdef __cplusplus
 extern "C" {

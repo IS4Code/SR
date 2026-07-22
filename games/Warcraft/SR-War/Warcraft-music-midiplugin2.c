@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -32,6 +32,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Warcraft-music-midiplugin2.h"
+#include "Game_memory.h"
 #include "xmi2mid.h"
 #include "midi-plugins2.h"
 
@@ -90,8 +91,7 @@ int MidiPlugin2_Startup(void)
     #define free_library FreeLibrary
     #define get_proc_address GetProcAddress
 
-    if (Game_MidiSubsystem == 11) plugin_name = ".\\midi2-windows.dll";
-    else if (Game_MidiSubsystem == 12) plugin_name = ".\\midi2-alsa.dll";
+    if (Game_MidiSubsystem == 11 || Game_MidiSubsystem == 21) plugin_name = ".\\midi2-windows.dll";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -103,15 +103,18 @@ int MidiPlugin2_Startup(void)
 
     if (MP2_handle == NULL)
     {
-        fprintf(stderr, "%s: load error: 0x%x\n", "midi2", GetLastError());
+        fprintf(stderr, "%s: load error: 0x%x\n", "midi2", (unsigned int)GetLastError());
         return 2;
     }
 #else
     #define free_library dlclose
     #define get_proc_address dlsym
 
-    if (Game_MidiSubsystem == 11) plugin_name = "./midi2-windows.so";
-    else if (Game_MidiSubsystem == 12) plugin_name = "./midi2-alsa.so";
+#if defined(__APPLE__)
+    if (Game_MidiSubsystem == 13 || Game_MidiSubsystem == 23) plugin_name = "./midi2-coremidi.so";
+#else
+    if (Game_MidiSubsystem == 12 || Game_MidiSubsystem == 22) plugin_name = "./midi2-alsa.so";
+#endif
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi2", "unknown plugin");
@@ -139,6 +142,12 @@ int MidiPlugin2_Startup(void)
 
     memset(&MP2_parameters, 0, sizeof(MP2_parameters));
     MP2_parameters.midi_device_name = Game_MidiDevice;
+    if (Game_MidiSubsystem > 20)
+    {
+        MP2_parameters.midi_type = 2;
+    }
+    MP2_parameters.mt32_delay = Game_MT32DelaySysex;
+    MP2_parameters.mt32_display_text = "Warcraft:Orcs&Humans";
 
     if (MP2_initialize(&MP2_parameters, &MP2_functions))
     {
@@ -203,7 +212,7 @@ void MidiPlugin2_AIL_release_sequence_handle(AIL_sequence *S)
     if (mp_sequence == NULL)
     {
         S->status = MP_STOPPED;
-        free(S);
+        x86_free(S);
         return;
     }
 
@@ -222,7 +231,7 @@ void MidiPlugin2_AIL_release_sequence_handle(AIL_sequence *S)
     mp_sequence->S = NULL;
     S->mp_sequence = NULL;
 
-    free(S);
+    x86_free(S);
 }
 
 int32_t MidiPlugin2_AIL_init_sequence(AIL_sequence *S, void *start, int32_t sequence_num)

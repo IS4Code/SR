@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -32,19 +32,25 @@
 #else
     #include <unistd.h>
     #include <dirent.h>
-    #include <alloca.h>
+    #if defined(__linux__)
+        #include <alloca.h>
+    #else
+        #include <stdlib.h>
+    #endif
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
 #include "Game_defs.h"
 #include "Game_scalerplugin.h"
 #include "Game_vars.h"
+#include "Albion-proc.h"
 #include "Albion-proc-vfs.h"
 #include "display/overlay.h"
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)) || defined(GP2X)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
 #undef ZLIB_DYNAMIC
 #else
 #define ZLIB_DYNAMIC 1
@@ -85,24 +91,32 @@ static int zlib_state = 0;
 #endif
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern uint8_t loc_17E164[1024];
 extern uint16_t loc_182010;
 
-static inline uint8_t *write_16be(uint8_t *ptr, uint16_t value)
+#ifdef __cplusplus
+}
+#endif
+
+static INLINE uint8_t *write_16be(uint8_t *ptr, uint16_t value)
 {
     ptr[0] = value >> 8;
     ptr[1] = value & 0xff;
     return ptr + 2;
 }
 
-static inline uint8_t *write_16le(uint8_t *ptr, uint16_t value)
+static INLINE uint8_t *write_16le(uint8_t *ptr, uint16_t value)
 {
     ptr[0] = value & 0xff;
     ptr[1] = value >> 8;
     return ptr + 2;
 }
 
-static inline uint8_t *write_32be(uint8_t *ptr, uint32_t value)
+static INLINE uint8_t *write_32be(uint8_t *ptr, uint32_t value)
 {
     ptr[0] = value >> 24;
     ptr[1] = (value >> 16) & 0xff;
@@ -111,7 +125,7 @@ static inline uint8_t *write_32be(uint8_t *ptr, uint32_t value)
     return ptr + 4;
 }
 
-static inline uint8_t *write_32le(uint8_t *ptr, uint32_t value)
+static INLINE uint8_t *write_32le(uint8_t *ptr, uint32_t value)
 {
     ptr[0] = value & 0xff;
     ptr[1] = (value >> 8) & 0xff;
@@ -120,7 +134,6 @@ static inline uint8_t *write_32le(uint8_t *ptr, uint32_t value)
     return ptr + 4;
 }
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
 static uint8_t *fill_png_pixel_data_advanced(uint32_t *src, int remaining, uint8_t *curptr)
 {
     int x, y, ret;
@@ -190,14 +203,11 @@ static uint8_t *fill_png_pixel_data_advanced(uint32_t *src, int remaining, uint8
 
     return curptr;
 }
-#endif
 
 static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverlay, int remaining, uint8_t *curptr)
 {
     int x, y, ret, overlay_y;
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     int counter, counter2;
-#endif
     uint8_t value;
     uint16_t *dst16;
     uint8_t *dst8, *src2, *orig;
@@ -214,14 +224,12 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
         case 2:
             pixel_data = (uint8_t *) alloca(724*2);
             break;
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
         case 5:
             pixel_data = (uint8_t *) alloca((360 * Scaler_ScaleFactor + 4) * 2);
             break;
         case 6:
             pixel_data = (uint8_t *) alloca((360 * Scaler_ScaleFactor + 4) * Scaler_ScaleFactor);
             break;
-#endif
         default:
             pixel_data = NULL;
             break;
@@ -264,14 +272,12 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
                 memcpy(&(pixel_data[4]), src, 360);
                 src += 360;
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
                 if (image_mode != 0)
                 {
                     src2_stride = Scaler_ScaleFactor * 360;
                     src2_factor = Scaler_ScaleFactor;
                 }
                 else
-#endif
                 {
                     src2_stride = 800;
                     src2_factor = 2;
@@ -415,7 +421,6 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
             }
         }
     }
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     else if (image_mode == 5)
     {
         pixel_data[3] = 0; // filter for first line
@@ -476,7 +481,6 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
             }
         }
     }
-#endif
     else if (image_mode == 2)
     {
         pixel_data[3] = 0; // filter for first line
@@ -699,7 +703,6 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
             }
         }
     }
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     else if (image_mode == 6)
     {
         for (counter = 0; counter < Scaler_ScaleFactor; counter++)
@@ -923,7 +926,6 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
             }
         }
     }
-#endif
 
     if (ret != Z_STREAM_END)
     {
@@ -943,21 +945,20 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
 #ifdef __cplusplus
 extern "C"
 #endif
-void Game_save_screenshot(const char *filename)
+void CCALL Game_save_screenshot(const char *filename)
 {
     uint8_t *screenshot_src, *buffer, *curptr, *chunk_size_ptr[2];
     uint32_t *buf_scaled;
     unsigned int width, height, width_in_file, palette_index;
+    void *stream;
     FILE *f;
     int image_mode, DrawOverlay;
     const char *extension;
     char *filename2;
 
     int x, y;
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     int counter, counter2;
     uint8_t value;
-#endif
     uint8_t *src, *orig, *src2, *dst;
 
 #ifdef ZLIB_DYNAMIC
@@ -966,7 +967,11 @@ void Game_save_screenshot(const char *filename)
         if (zlib_state < 0) return;
         else if (zlib_state == 0)
         {
+#if defined(__APPLE__)
+            static const char *zlib_libraries[2] = {"libz.1.dylib", "./libz.dylib"};
+#else
             static const char *zlib_libraries[2] = {"libz.so.1", "./libz.so"};
+#endif
             int zindex;
 
             for (zindex = 0; zindex < 2; zindex++)
@@ -1010,7 +1015,6 @@ void Game_save_screenshot(const char *filename)
     screenshot_src = &(Game_FrameBuffer[loc_182010 * 360 * 240]);
     DrawOverlay = Get_DrawOverlay(screenshot_src, &Game_OverlayDraw);
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     if (Game_AdvancedScaling)
     {
         if ((Game_ScreenshotEnhancedResolution != 0) && (Scaler_ScaleFactor > 1))
@@ -1040,7 +1044,6 @@ void Game_save_screenshot(const char *filename)
         }
     }
     else
-#endif
     {
         if ((Render_Width == 720) && (Game_ScreenshotEnhancedResolution != 0))
         {
@@ -1123,7 +1126,8 @@ void Game_save_screenshot(const char *filename)
     {
         static int lastnum = 0;
 
-        filename2 = (char *) malloc(10 + 4 + 1 + 3 + 1);
+#define MAX_FILENAME (10 + 4 + 1 + 3 + 1)
+        filename2 = (char *) malloc(MAX_FILENAME);
         if (filename2 == NULL)
         {
             if (buf_scaled != NULL) free(buf_scaled);
@@ -1133,7 +1137,7 @@ void Game_save_screenshot(const char *filename)
 
         if (lastnum != 0)
         {
-            sprintf(filename2, "Screenshot%04d%s", lastnum, extension);
+            snprintf(filename2, MAX_FILENAME, "Screenshot%04d%s", lastnum, extension);
             lastnum++;
 
             // check if file exists
@@ -1154,7 +1158,7 @@ void Game_save_screenshot(const char *filename)
             HANDLE hFindFile;
             WIN32_FIND_DATAA FindFileData;
 
-            sprintf(filename2, "Screenshot*%s", extension);
+            snprintf(filename2, MAX_FILENAME, "Screenshot*%s", extension);
 
             hFindFile = FindFirstFileA(filename2, &FindFileData);
             if (hFindFile != INVALID_HANDLE_VALUE)
@@ -1203,9 +1207,10 @@ void Game_save_screenshot(const char *filename)
 #endif
             // todo: find lastnum
 
-            sprintf(filename2, "Screenshot%04d%s", lastnum, extension);
+            snprintf(filename2, MAX_FILENAME, "Screenshot%04d%s", lastnum, extension);
             lastnum++;
         }
+#undef MAX_FILENAME
     }
     else
     {
@@ -1304,7 +1309,7 @@ void Game_save_screenshot(const char *filename)
         curptr = write_16be(curptr, (image_mode)?480:((Game_ScreenshotFormat == 0)?200:240));
 
         // write "BMHD" chunk size (32-bit Big Endian)
-        write_32be(chunk_size_ptr[1], (curptr - chunk_size_ptr[1]) - 4);
+        write_32be(chunk_size_ptr[1], (uint32_t)(curptr - chunk_size_ptr[1]) - 4);
 
         // write "CMAP" chunk id
         memcpy(curptr, "CMAP", 4);
@@ -1324,7 +1329,7 @@ void Game_save_screenshot(const char *filename)
         }
 
         // write "CMAP" chunk size (32-bit Big Endian)
-        write_32be(chunk_size_ptr[1], (curptr - chunk_size_ptr[1]) - 4);
+        write_32be(chunk_size_ptr[1], (uint32_t)(curptr - chunk_size_ptr[1]) - 4);
 
         // write "BODY" chunk id
         memcpy(curptr, "BODY", 4);
@@ -1524,20 +1529,10 @@ void Game_save_screenshot(const char *filename)
         curptr += 4;
 
         // write Pixels per unit, X axis
-        curptr = write_32be(curptr,
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
-            (Game_AdvancedScaling)?(Scaler_ScaleTextureData * 320):
-#endif
-            640
-        );
+        curptr = write_32be(curptr, (Game_AdvancedScaling)?(Scaler_ScaleTextureData * 320):640);
 
         // write Pixels per unit, Y axis
-        curptr = write_32be(curptr,
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
-            (Game_AdvancedScaling)?(Scaler_ScaleTextureData * 240):
-#endif
-            480
-        );
+        curptr = write_32be(curptr, (Game_AdvancedScaling)?(Scaler_ScaleTextureData * 240):480);
 
         // write Unit specifier
         *curptr = 0;
@@ -1608,7 +1603,6 @@ void Game_save_screenshot(const char *filename)
     }
 
     // fill pixel data
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
     if (image_mode == 11)
     {
         uint32_t *palette, *buf_unscaled, *src32, *dst32;
@@ -1752,7 +1746,7 @@ void Game_save_screenshot(const char *filename)
 
         if (Game_ScreenshotFormat == 5)
         {
-            curptr = fill_png_pixel_data_advanced(buf_scaled, width_in_file * height + (2000 - 16) - (curptr - buffer), curptr);
+            curptr = fill_png_pixel_data_advanced(buf_scaled, width_in_file * height + (2000 - 16) - (int)(curptr - buffer), curptr);
             if (curptr == NULL)
             {
                 if (filename2 != NULL) free(filename2);
@@ -1782,10 +1776,9 @@ void Game_save_screenshot(const char *filename)
 
     }
     else
-#endif
     if (Game_ScreenshotFormat == 5)
     {
-        curptr = fill_png_pixel_data(screenshot_src, image_mode, DrawOverlay, width_in_file * height + (2000 - 16) - (curptr - buffer), curptr);
+        curptr = fill_png_pixel_data(screenshot_src, image_mode, DrawOverlay, width_in_file * height + (2000 - 16) - (int)(curptr - buffer), curptr);
         if (curptr == NULL)
         {
             if (filename2 != NULL) free(filename2);
@@ -1800,14 +1793,12 @@ void Game_save_screenshot(const char *filename)
         {
             unsigned int src2_stride, src2_factor;
 
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
             if (image_mode != 0)
             {
                 src2_stride = Scaler_ScaleFactor * 360;
                 src2_factor = Scaler_ScaleFactor;
             }
             else
-#endif
             {
                 src2_stride = 800;
                 src2_factor = 2;
@@ -1880,7 +1871,6 @@ void Game_save_screenshot(const char *filename)
                 curptr += width_in_file;
             }
         }
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
         else if (image_mode == 5)
         {
             src = screenshot_src;
@@ -1915,7 +1905,6 @@ void Game_save_screenshot(const char *filename)
                 curptr += (Scaler_ScaleFactor - 1) * width_in_file;
             }
         }
-#endif
         else if (image_mode == 2)
         {
             src = screenshot_src;
@@ -2045,7 +2034,6 @@ void Game_save_screenshot(const char *filename)
                 curptr += width_in_file;
             }
         }
-#if defined(ALLOW_OPENGL) || SDL_VERSION_ATLEAST(2,0,0)
         else if (image_mode == 6)
         {
             src = screenshot_src;
@@ -2240,29 +2228,28 @@ void Game_save_screenshot(const char *filename)
                 curptr += (Scaler_ScaleFactor - 1) * width_in_file;
             }
         }
-#endif
     }
 
     if ((Game_ScreenshotFormat == 0) || (Game_ScreenshotFormat == 1) || (Game_ScreenshotFormat == 2))
     {
         // write "BODY" chunk size (32-bit Big Endian)
-        write_32be(chunk_size_ptr[1], (curptr - chunk_size_ptr[1]) - 4);
+        write_32be(chunk_size_ptr[1], (uint32_t)(curptr - chunk_size_ptr[1]) - 4);
 
         // write "FORM" chunk size (32-bit Big Endian)
-        write_32be(chunk_size_ptr[0], (curptr - chunk_size_ptr[0]) - 4);
+        write_32be(chunk_size_ptr[0], (uint32_t)(curptr - chunk_size_ptr[0]) - 4);
     }
     else if (Game_ScreenshotFormat == 4)
     {
         // write file size (32-bit Little Endian)
-        write_32le(chunk_size_ptr[0], curptr - buffer);
+        write_32le(chunk_size_ptr[0], (uint32_t)(curptr - buffer));
     }
     else if (Game_ScreenshotFormat == 5)
     {
         // write "IDAT" chunk size
-        write_32be(chunk_size_ptr[0], (curptr - chunk_size_ptr[0]) - 8);
+        write_32be(chunk_size_ptr[0], (uint32_t)(curptr - chunk_size_ptr[0]) - 8);
 
         // write "IDAT" chunk crc32
-        curptr = write_32be(curptr, zlib_crc32(0, chunk_size_ptr[0] + 4, curptr - (chunk_size_ptr[0] + 4)));
+        curptr = write_32be(curptr, zlib_crc32(0, chunk_size_ptr[0] + 4, (uInt)(curptr - (chunk_size_ptr[0] + 4))));
 
 
         // "IEND" chunk
@@ -2281,15 +2268,21 @@ void Game_save_screenshot(const char *filename)
     if (Game_ScreenshotAutomaticFilename)
     {
         f = fopen(filename2, "wb");
+        if (f != NULL)
+        {
+            fwrite(buffer, 1, curptr - buffer, f);
+            fclose(f);
+        }
     }
     else
     {
-        f = Game_fopen((filename2 != NULL)?filename2:filename, "wb");
-    }
-    if (f != NULL)
-    {
-        fwrite(buffer, 1, curptr - buffer, f);
-        fclose(f);
+        stream = Game_fopen((filename2 != NULL)?filename2:filename, "wb");
+        if (stream != NULL)
+        {
+            f = (sizeof(void *) > 4) ? *(FILE **)stream : (FILE *)stream;
+            fwrite(buffer, 1, curptr - buffer, f);
+            Game_fclose(stream);
+        }
     }
 
     if (filename2 != NULL) free(filename2);

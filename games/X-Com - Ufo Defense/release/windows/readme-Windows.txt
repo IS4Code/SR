@@ -1,5 +1,5 @@
 X-COM: UFO Defense for Windows (x86)
-Version 1.6.0
+Version 1.6.2
 
 Original DOS X-COM: UFO Defense version 1.4 is required for playing.
 (Gold version for Windows should also work)
@@ -11,7 +11,7 @@ Installation
 Put files from this archive into the installed game's directory.
 
 Simple instructions:
-1) install X-COM: UFO Defense on your PC
+1) install X-COM: UFO Defense on your PC (or copy installed game from another computer)
 2) copy the files from this archive into the game's directory
 3) run the game using xcom1.cmd or SR-Xcom1.exe
 
@@ -40,10 +40,12 @@ The General MIDI music can be played using one of following libraries:
 NativeWindows, WildMIDI, BASSMIDI, libADLMIDI, SDL_mixer
 
 NativeWindows is the default library, others can be selected in the configuration file.
-NativeWindows and libADLMIDI dond't require additional files for MIDI playback,
+NativeWindows and libADLMIDI don't require additional files for MIDI playback,
 WildMIDI requires GUS patches for MIDI playback,
 BASSMIDI requires a soundfont for MIDI playback,
 libADLMIDI uses OPL3 emulator for MIDI playback.
+General MIDI music can be played using AWE32 emulator (DOS game version).
+Music can be played on MT-32 synth using NativeWindows (MT-32 music in DOS game version / General MIDI music in Gold edition).
 
 NativeWindows can use the default synth or it can be selected in the configuration file.
 
@@ -58,6 +60,7 @@ in the configuration file.
 Adlib music can be played without additional files.
 MT-32 music can be played using MUNT emulator or ALSA sequencer.
 MUNT emulator requires Control and PCM roms from MT-32 or CM-32L/LAPC-I.
+AWE32 emulator requires AWE32 rom.
 
 
 Configuration
@@ -97,6 +100,7 @@ DOSBox 'compat' OPL emulator uses version 2.1 or later of the GNU Lesser General
 Nuked OPL3 emulator uses version 2.1 or later of the GNU Lesser General Public License (LGPLv2.1).
 
 MUNT emulator uses version 2.1 or later of the GNU Lesser General Public License (LGPLv2.1).
+AWE32 emulator uses version 2 of the GNU General Public License (GPLv2).
 
 The game optionally uses SpeexDSP library for audio resampling (https://github.com/xiph/speexdsp).
 
@@ -105,6 +109,16 @@ Source code is available on GitHub: https://github.com/M-HT/SR
 
 Changes
 -------
+
+v1.6.2 (2026-05-25)
+* use newer library versions
+* bug fixes
+
+v1.6.1 (2024-12-17)
+* add option to play General MIDI music using AWE32 emulator (DOS game version)
+* add support for playing General MIDI music on MT-32 synth (Gold edition)
+* fix playing sound effects at non-standard frequencies
+* bug fixes
 
 v1.6.0 (2024-09-22)
 * add option to use higher quality audio resampling

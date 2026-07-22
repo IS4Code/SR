@@ -1,5 +1,5 @@
 Albion for Windows (x86)
-Version 1.8.0
+Version 1.8.2
 
 Original Albion version 1.38 is required for playing.
 (English version preferred, but other languages should also work)
@@ -11,7 +11,7 @@ Installation
 Put files from this archive into the installed game's directory.
 
 Simple instructions:
-1) install Albion on your PC
+1) install Albion on your PC (or copy installed game from another computer)
 2) copy the ALBION subdirectory from CD onto harddisk (into the Albion directory tree)
 3) in file SETUP.INI change the path (SOURCE_PATH) from CD to the copied directory on disk (using relative path)
 4) copy the files from this archive into the game's directory
@@ -55,6 +55,7 @@ libADLMIDI and NativeWindows don't require additional files for MIDI playback,
 WildMIDI requires GUS patches for MIDI playback,
 BASSMIDI requires a soundfont for MIDI playback,
 libADLMIDI uses OPL3 emulator for MIDI playback.
+Music can be played on MT-32 synth using NativeWindows.
 
 NativeWindows can use the default synth or it can be selected in the configuration file.
 
@@ -120,6 +121,16 @@ Source code is available on GitHub: https://github.com/M-HT/SR
 
 Changes
 -------
+
+v1.8.2 (2026-05-28)
+* use newer library versions
+* bug fixes
+
+
+v1.8.1 (2024-12-18)
+* add option to play music on MT-32 synth
+* bug fixes
+
 
 v1.8.0 (2024-09-26)
 * add option to use higher quality audio resampling

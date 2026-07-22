@@ -2,7 +2,7 @@
 
 /**
  *
- *  Copyright (C) 2019 Roman Pauer
+ *  Copyright (C) 2019-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -30,6 +30,11 @@ typedef struct {
     uint32_t _eax, _ecx, _edx, _ebx, _esp, _ebp, _esi, _edi, _eflags;
     uint32_t _st_top, _st_sw_cond, _st_cw;
     double _st[8];
+#ifdef PTROFS_64BIT
+    uint64_t _pointer_offset;
+#else
+    uint64_t _reserved1;
+#endif
     int64_t _st_result;
     void *stack_bottom, *stack_top;
 } _cpu;
@@ -66,19 +71,55 @@ typedef struct {
 #define IF 0x0200
 #define DF 0x0400
 
+#ifdef PTROFS_64BIT
+
+#define REG2PTR(x) ((void *)((uintptr_t)(x) + cpu->_pointer_offset))
+#define PTR2REG(x) ((uint32_t)((uintptr_t)(x) - cpu->_pointer_offset))
+
+#else
+
 #define REG2PTR(x) ((void *)(uintptr_t)(x))
+#define PTR2REG(x) ((uint32_t)(uintptr_t)(x))
+
+#endif
 
 #ifdef __cplusplus
 #define EXTERNC extern "C"
+#define EXTERNCVAR extern "C"
 #else
 #define EXTERNC
+#define EXTERNCVAR extern
+#endif
+
+#if defined(__GNUC__) && (defined(__i386) || (defined(__x86_64) && defined(_WIN32)))
+    #define CCALL __attribute__ ((__cdecl__))
+#elif defined(_MSC_VER)
+    #define CCALL __cdecl
+#else
+    #define CCALL
 #endif
 
 // *********************************************************************
 
+#if defined(_MSC_VER)
+
+static __inline uint32_t unaligned_read_32(void *adr)
+{
+    uint32_t __unaligned *uptr = (uint32_t __unaligned *)adr;
+    return *uptr;
+}
+
+static __inline void unaligned_write_32(void *adr, uint32_t val)
+{
+    uint32_t __unaligned *uptr = (uint32_t __unaligned *)adr;
+    *uptr = val;
+}
+
+#else
+
 typedef struct {
     uint32_t u;
-} __attribute__((packed)) _unaligned32;
+} __attribute__((__packed__)) _unaligned32;
 
 static inline uint32_t unaligned_read_32(void *adr)
 {
@@ -92,14 +133,32 @@ static inline void unaligned_write_32(void *adr, uint32_t val)
     uptr->u = val;
 }
 
+#endif
+
 #define UNALIGNED_READ_32(adr) (unaligned_read_32(REG2PTR(adr)))
 #define UNALIGNED_WRITE_32(adr, val) unaligned_write_32(REG2PTR(adr), (val));
 
 // *********************************************************************
 
+#if defined(_MSC_VER)
+
+static __inline uint16_t unaligned_read_16(void *adr)
+{
+    uint16_t __unaligned *uptr = (uint16_t __unaligned *)adr;
+    return *uptr;
+}
+
+static __inline void unaligned_write_16(void *adr, uint16_t val)
+{
+    uint16_t __unaligned *uptr = (uint16_t __unaligned *)adr;
+    *uptr = val;
+}
+
+#else
+
 typedef struct {
     uint16_t u;
-} __attribute__((packed)) _unaligned16;
+} __attribute__((__packed__)) _unaligned16;
 
 static inline uint16_t unaligned_read_16(void *adr)
 {
@@ -112,6 +171,8 @@ static inline void unaligned_write_16(void *adr, uint16_t val)
     _unaligned16 *uptr = (_unaligned16 *)adr;
     uptr->u = val;
 }
+
+#endif
 
 #define UNALIGNED_READ_16(adr) (unaligned_read_16(REG2PTR(adr)))
 #define UNALIGNED_WRITE_16(adr, val) unaligned_write_16(REG2PTR(adr), (val));

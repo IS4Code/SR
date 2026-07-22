@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,18 +22,16 @@
  *
  */
 
+#if defined(__DEBUG__)
 #include <inttypes.h>
-#include <malloc.h>
+#endif
+#include <stdlib.h>
 #include <string.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-sound.h"
 #include "Albion-AIL.h"
-#ifdef USE_SDL2
-    #include <SDL2/SDL_mixer.h>
-#else
-    #include <SDL/SDL_mixer.h>
-#endif
+#include "Game_memory.h"
+#include <SDL_mixer.h>
 #ifdef USE_SPEEXDSP_RESAMPLER
 #include <speex/speex_resampler.h>
 #endif
@@ -56,14 +54,14 @@ typedef struct _AIL_sample
 
 extern int32_t AIL_preference[];
 
-struct _AIL_sample *Game_AIL_allocate_sample_handle(void *dig)
+struct _AIL_sample * CCALL Game_AIL_allocate_sample_handle(void *dig)
 {
     AIL_sample *ret;
 
 #define ORIG_SAMPLE_SIZE 644
 #define SAMPLE_SIZE ( (sizeof(AIL_sample) > ORIG_SAMPLE_SIZE)?(sizeof(AIL_sample)):(ORIG_SAMPLE_SIZE) )
 
-    ret = (AIL_sample *) malloc(SAMPLE_SIZE);
+    ret = (AIL_sample *) x86_malloc(SAMPLE_SIZE);
 
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_allocate_sample_handle: return: 0x%" PRIxPTR "\n", (uintptr_t) ret);
@@ -91,7 +89,7 @@ struct _AIL_sample *Game_AIL_allocate_sample_handle(void *dig)
 #undef ORIG_SAMPLE_SIZE
 }
 
-void Game_AIL_release_sample_handle(struct _AIL_sample *S)
+void CCALL Game_AIL_release_sample_handle(struct _AIL_sample *S)
 {
     Game_sample *sample;
 
@@ -117,10 +115,10 @@ void Game_AIL_release_sample_handle(struct _AIL_sample *S)
         S->sample = NULL;
     }
 
-    free(S);
+    x86_free(S);
 }
 
-void Game_AIL_init_sample(struct _AIL_sample *S)
+void CCALL Game_AIL_init_sample(struct _AIL_sample *S)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_init_sample: 0x%" PRIxPTR "\n", (uintptr_t) S);
@@ -138,7 +136,7 @@ void Game_AIL_init_sample(struct _AIL_sample *S)
 
 }
 
-void Game_AIL_set_sample_address(struct _AIL_sample *S, void *start, uint32_t len)
+void CCALL Game_AIL_set_sample_address(struct _AIL_sample *S, void *start, uint32_t len)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_address: 0x%" PRIxPTR ", 0x%" PRIxPTR ", %i\n", (uintptr_t) S, (uintptr_t) start, len);
@@ -148,7 +146,7 @@ void Game_AIL_set_sample_address(struct _AIL_sample *S, void *start, uint32_t le
     S->len = len;
 }
 
-void Game_AIL_set_sample_type(struct _AIL_sample *S, int32_t format, uint32_t flags)
+void CCALL Game_AIL_set_sample_type(struct _AIL_sample *S, int32_t format, uint32_t flags)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_type: 0x%" PRIxPTR ", 0x%x, %i\n", (uintptr_t) S, format, flags);
@@ -349,7 +347,7 @@ static void Interpolated_Resample(int _stereo, int _16bit, int _signed, uint32_t
 #undef RESAMPLE
 }
 
-void Game_AIL_start_sample(struct _AIL_sample *S)
+void CCALL Game_AIL_start_sample(struct _AIL_sample *S)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_start_sample: 0x%" PRIxPTR "\n", (uintptr_t) S);
@@ -468,7 +466,7 @@ void Game_AIL_start_sample(struct _AIL_sample *S)
 
                         SDL_BuildAudioCVT(&cvt, AUDIO_S16LSB, channels, Game_AudioRate, Game_AudioFormat, Game_AudioChannels, Game_AudioRate);
 
-                        sample = (Game_sample *) malloc(sizeof(Game_sample) + newlen_bytes * cvt.len_mult * form_mult);
+                        sample = (Game_sample *) malloc(offsetof(Game_sample, data) + newlen_bytes * cvt.len_mult * form_mult);
 
                         sample->start = (uint8_t *) S->start;
                         sample->len = S->len;
@@ -555,9 +553,7 @@ void Game_AIL_start_sample(struct _AIL_sample *S)
                     }
                     else
 #endif
-#if SDL_VERSION_ATLEAST(2,0,0)
                     if (Game_ResamplingQuality <= 0)
-#endif
                     {
                         // interpolated resampling
                         resample_type = 2;
@@ -570,7 +566,7 @@ void Game_AIL_start_sample(struct _AIL_sample *S)
 
                         SDL_BuildAudioCVT(&cvt, format, channels, Game_AudioRate, Game_AudioFormat, Game_AudioChannels, Game_AudioRate);
 
-                        sample = (Game_sample *) malloc(sizeof(Game_sample) + newlen_bytes * cvt.len_mult * form_mult);
+                        sample = (Game_sample *) malloc(offsetof(Game_sample, data) + newlen_bytes * cvt.len_mult * form_mult);
 
                         sample->start = (uint8_t *) S->start;
                         sample->len = S->len;
@@ -587,7 +583,7 @@ void Game_AIL_start_sample(struct _AIL_sample *S)
 
                     SDL_BuildAudioCVT(&cvt, format, channels, S->playback_rate, Game_AudioFormat, Game_AudioChannels, Game_AudioRate);
 
-                    sample = (Game_sample *) malloc(sizeof(Game_sample) + S->len * cvt.len_mult);
+                    sample = (Game_sample *) malloc(offsetof(Game_sample, data) + S->len * cvt.len_mult);
 
                     sample->start = (uint8_t *) S->start;
                     sample->len = S->len;
@@ -692,7 +688,7 @@ void Game_AIL_start_sample(struct _AIL_sample *S)
 
 }
 
-void Game_AIL_end_sample(struct _AIL_sample *S)
+void CCALL Game_AIL_end_sample(struct _AIL_sample *S)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_end_sample: 0x%" PRIxPTR "\n", (uintptr_t) S);
@@ -701,7 +697,7 @@ void Game_AIL_end_sample(struct _AIL_sample *S)
     Mix_HaltChannel(S->channel);
 }
 
-void Game_AIL_set_sample_playback_rate(struct _AIL_sample *S, int32_t playback_rate)
+void CCALL Game_AIL_set_sample_playback_rate(struct _AIL_sample *S, int32_t playback_rate)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_playback_rate: 0x%" PRIxPTR ", %i\n", (uintptr_t) S, playback_rate);
@@ -710,7 +706,7 @@ void Game_AIL_set_sample_playback_rate(struct _AIL_sample *S, int32_t playback_r
     S->playback_rate = playback_rate;
 }
 
-void Game_AIL_set_sample_volume(struct _AIL_sample *S, int32_t volume)
+void CCALL Game_AIL_set_sample_volume(struct _AIL_sample *S, int32_t volume)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_volume: 0x%" PRIxPTR ", %i\n", (uintptr_t) S, volume);
@@ -719,7 +715,7 @@ void Game_AIL_set_sample_volume(struct _AIL_sample *S, int32_t volume)
     S->volume = volume; /* 0-127 */
 }
 
-void Game_AIL_set_sample_pan(struct _AIL_sample *S, int32_t pan)
+void CCALL Game_AIL_set_sample_pan(struct _AIL_sample *S, int32_t pan)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_pan: 0x%" PRIxPTR ", %i\n", (uintptr_t) S, pan);
@@ -728,7 +724,7 @@ void Game_AIL_set_sample_pan(struct _AIL_sample *S, int32_t pan)
     S->pan = pan; /* 0-127 */
 }
 
-void Game_AIL_set_sample_loop_count(struct _AIL_sample *S, int32_t loop_count)
+void CCALL Game_AIL_set_sample_loop_count(struct _AIL_sample *S, int32_t loop_count)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_sample_loop_count: 0x%" PRIxPTR ", %i\n", (uintptr_t) S, loop_count);
@@ -737,7 +733,7 @@ void Game_AIL_set_sample_loop_count(struct _AIL_sample *S, int32_t loop_count)
     S->loop_count = loop_count;
 }
 
-uint32_t Game_AIL_sample_status(struct _AIL_sample *S)
+uint32_t CCALL Game_AIL_sample_status(struct _AIL_sample *S)
 {
     uint32_t ret;
 
@@ -765,7 +761,7 @@ uint32_t Game_AIL_sample_status(struct _AIL_sample *S)
     return ret;
 }
 
-void Game_AIL_set_digital_master_volume(void *dig, int32_t master_volume)
+void CCALL Game_AIL_set_digital_master_volume(void *dig, int32_t master_volume)
 {
 #if defined(__DEBUG__)
     fprintf(stderr, "AIL_set_digital_master_volume: %i\n", master_volume);

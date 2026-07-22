@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +22,6 @@
  *
  */
 
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_thread.h"
 #include "Albion-timer.h"
@@ -30,7 +29,7 @@
 #include "audio.h"
 #include "input.h"
 
-void Game_RunTimer(void)
+void CCALL Game_RunTimer(void)
 {
     if (!Game_TimerRunning)
     {
@@ -108,7 +107,7 @@ int Game_TimerThread(void *data)
     LastTimerTick = SDL_GetTicks();
     TickCounter = 0;
 
-    while (1)
+    for (;;)
     {
         SDL_Delay(1);
 
@@ -139,18 +138,7 @@ int Game_TimerThread(void *data)
 
         if (Thread_Exit && Thread_Exited)
         {
-            return 0;
-        }
-
-        if (Game_VolumeDelta == 1)
-        {
-//senquack - SOUND STUFF
-            Change_HW_Audio_Volume(1);
-        }
-        else if (Game_VolumeDelta == -1)
-        {
-//senquack - SOUND STUFF
-            Change_HW_Audio_Volume(-1);
+            break;
         }
 
         if (SMK_Playing) continue;

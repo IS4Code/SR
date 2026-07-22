@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2023 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,13 +24,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "Game_defs.h"
 #include "Game_vars.h"
 #include "Xcom-int2.h"
 #include "Game_thread.h"
 #include "Game-int2.h"
 
-uint32_t Game_int386x(
+uint32_t CCALL Game_int386x(
     const uint32_t IntNum,
     const Game_REGS *in_regs,
     Game_REGS *out_regs,
@@ -53,9 +52,10 @@ uint32_t Game_int386x(
 
     switch (IntNum)
     {
+        case 0:
         default:
             Game_StopMain();
-    } // switch (inter_no)
+    } // switch (IntNum)
 
     *out_regs = tmp_regs;
 

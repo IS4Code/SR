@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2016-2024 Roman Pauer
+ *  Copyright (C) 2016-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -33,6 +33,7 @@
 #include "Game_vars.h"
 #include "Albion-music-midiplugin.h"
 #include "Albion-music-xmiplayer.h"
+#include "Game_memory.h"
 #include "xmi2mid.h"
 #include "midi-plugins.h"
 
@@ -103,7 +104,7 @@ static volatile int thread_finish;
 static int last_volume[2];
 
 
-static inline void LockSem(SDL_sem *sem)
+static INLINE void LockSem(SDL_sem *sem)
 {
     while (SDL_SemWait(sem));
 }
@@ -582,7 +583,7 @@ static int MidiPlugin_ProcessData(void *data)
                                         MP_functions.set_master_volume(volume);
                                     }
 
-                                    MP_sequence[index].bytes_left[write_buffer] = MP_functions.get_data(MP_sequence[index].midi, (char *) MP_sequence[index].buffer[write_buffer], BUFFER_SIZE);
+                                    MP_sequence[index].bytes_left[write_buffer] = (Uint16)MP_functions.get_data(MP_sequence[index].midi, (char *) MP_sequence[index].buffer[write_buffer], BUFFER_SIZE);
                                     if (MP_sequence[index].bytes_left[write_buffer] != BUFFER_SIZE)
                                     {
                                         MP_functions.rewind_midi(MP_sequence[index].midi);
@@ -655,7 +656,7 @@ static int MidiPlugin_ProcessData(void *data)
                                     MP_functions.set_master_volume(volume);
                                 }
 
-                                MP_sequence[index].bytes_left[write_buffer] = MP_functions.get_data(MP_sequence[index].midi, (char *) MP_sequence[index].buffer[write_buffer], BUFFER_SIZE);
+                                MP_sequence[index].bytes_left[write_buffer] = (Uint16)MP_functions.get_data(MP_sequence[index].midi, (char *) MP_sequence[index].buffer[write_buffer], BUFFER_SIZE);
                             }
 
                             if (MP_sequence[index].read_buffer == MP_sequence[index].write_buffer)
@@ -708,7 +709,7 @@ int MidiPlugin_Startup(void)
 
     if (MP_handle == NULL)
     {
-        fprintf(stderr, "%s: load error: 0x%x\n", "midi", GetLastError());
+        fprintf(stderr, "%s: load error: 0x%x\n", "midi", (unsigned int)GetLastError());
         return 2;
     }
 #else
@@ -810,13 +811,7 @@ int MidiPlugin_Startup(void)
     // start thread
     thread_finish = 0;
 
-    MP_thread = SDL_CreateThread(
-        MidiPlugin_ProcessData,
-#if SDL_VERSION_ATLEAST(2,0,0)
-        "midi",
-#endif
-        NULL
-    );
+    MP_thread = SDL_CreateThread(MidiPlugin_ProcessData, "midi", NULL);
     if (MP_thread == NULL)
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "failed to create thread");
@@ -936,7 +931,7 @@ void MidiPlugin_AIL_release_sequence_handle(AIL_sequence *S)
     if (mp_sequence == NULL)
     {
         S->status = MP_STOPPED;
-        free(S);
+        x86_free(S);
         return;
     }
 
@@ -964,7 +959,7 @@ void MidiPlugin_AIL_release_sequence_handle(AIL_sequence *S)
 
     SDL_SemPost(mp_sequence->sem);
 
-    free(S);
+    x86_free(S);
 }
 
 int32_t MidiPlugin_AIL_init_sequence(AIL_sequence *S, void *start, int32_t sequence_num)
