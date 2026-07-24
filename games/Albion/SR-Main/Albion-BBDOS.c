@@ -208,6 +208,8 @@ int32_t CCALL DOS_Open(const char *path, uint32_t mode)
 
     vfs_err = vfs_get_real_name(path, (char *) &temp_str, &realdir);
 
+    vfs_fetch((char *) &temp_str, mode == DOS_OPEN_MODE_CREATE);
+
     if (open_flags | (O_APPEND | O_CREAT))
     {
         fd = open((const char *) &temp_str, open_flags, 0x1FF);

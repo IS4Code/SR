@@ -40,4 +40,10 @@ void vfs_add_file(file_entry *dir, const char *filepath, int attributes);
 file_entry *vfs_get_current_dir(void);
 file_entry *vfs_set_current_dir(const char *newdir);
 
+#if defined(__EMSCRIPTEN__)
+void vfs_fetch(const char *filepath, int is_write);
+#else
+#define vfs_fetch(filepath, is_write) ((void)(filepath, is_write))
+#endif
+
 #endif /* _VIRTUALFS_H_INCLUDED_ */

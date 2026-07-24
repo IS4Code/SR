@@ -22,6 +22,8 @@
 
 import os
 import subprocess
+import shutil
+import json
 
 # set help text
 vars = Variables('custom.py')
@@ -305,7 +307,7 @@ elif device == 'web':
     env['LINK'] = 'em++'
     env['ENV'] = dict(os.environ)
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
-               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 --preload-file data_preload@ --embed-file data_embed@ -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
+               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 --preload-file data_preload/DRIVERS@/DRIVERS --preload-file data_preload/XLDLIBS/PICTURE0.XLD@/XLDLIBS/PICTURE0.XLD --embed-file data_embed@ --pre-js web_prerun.js -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
@@ -315,6 +317,39 @@ elif device == 'web':
             os.makedirs('publish')
         except OSError:
             pass
+
+        # files streamed at run-time
+        publish_data_dir = os.path.join('publish', 'data')
+        remote_sources = [('XLDLIBS', os.path.join('data_preload', 'XLDLIBS')),
+                           ('MAIN.EXE', os.path.join('data_preload', 'MAIN.EXE'))]
+        # embedded files
+        embedded_paths = set(['XLDLIBS/PICTURE0.XLD'])
+
+        if not os.path.exists(publish_data_dir):
+            os.makedirs(publish_data_dir)
+            for rel_name, src_path in remote_sources:
+                dst_path = os.path.join(publish_data_dir, rel_name)
+                if os.path.isdir(src_path):
+                    shutil.copytree(src_path, dst_path)
+                else:
+                    shutil.copyfile(src_path, dst_path)
+
+        manifest = {}
+        for rel_name, _ in remote_sources:
+            root_path = os.path.join(publish_data_dir, rel_name)
+            if os.path.isdir(root_path):
+                for dirpath, _dirnames, filenames in os.walk(root_path):
+                    for fname in filenames:
+                        full_path = os.path.join(dirpath, fname)
+                        rel_path = os.path.relpath(full_path, publish_data_dir).replace(os.sep, '/')
+                        if rel_path in embedded_paths:
+                            continue
+                        manifest[rel_path] = os.path.getsize(full_path)
+            elif os.path.isfile(root_path):
+                manifest[rel_name] = os.path.getsize(root_path)
+
+        with open(os.path.join(publish_data_dir, 'manifest.json'), 'w') as manifest_file:
+            json.dump(manifest, manifest_file)
     program_name = 'publish/' + program_name + '.html'
 
 def get_compiler_version(compiler_path, env_path):
@@ -390,4 +425,5 @@ else:
     arch_objs = SConscript('arm/SConscript', exports='device env')
 
 
-env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs + midi_objs)
+program = env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs + midi_objs)
+env.Depends(program, 'web_prerun.js')

@@ -180,6 +180,8 @@ void * CCALL Game_fopen(const char *filename, const char *mode)
     fprintf(stderr, "fopen: real name: %s (%i)\n", (char *) &temp_str, vfs_err);
 #endif
 
+    vfs_fetch((char *) &temp_str, mode[0] == 'w');
+
     fp = fopen((char *) &temp_str, mode);
     Game_Set_errno_val();
 

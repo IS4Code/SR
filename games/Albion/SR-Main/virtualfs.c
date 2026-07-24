@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
 #include <direct.h>
 #include <io.h>
@@ -743,3 +744,139 @@ file_entry *vfs_set_current_dir(const char *newdir)
     Game_Current_Dir = parse_dir;
     return parse_dir;
 }
+
+#if defined(__EMSCRIPTEN__)
+
+#include <emscripten.h>
+
+EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len), {
+    setValue(out_len, 0, "i32");
+
+    // normalize for / root
+    var path = UTF8ToString(filepath);
+    if (path.startsWith("./")) path = path.substring(2);
+    else if (path.startsWith("/")) path = path.substring(1);
+
+    var manifest = Module.GameManifest;
+    if (!manifest)
+    {
+        // load the manifest
+        manifest = {};
+        try
+        {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "data/manifest.json", false);
+            xhr.responseType = "json";
+            xhr.send();
+            if (xhr.status === 200)
+            {
+                manifest = xhr.response;
+            }
+            else
+            {
+                console.error("manifest could not be loaded: " + xhr.status);
+            }
+        }
+        catch (e)
+        {
+            console.error("manifest could not be loaded: " + e);
+        }
+        Module.GameManifest = manifest;
+    }
+    if (!manifest.hasOwnProperty(path))
+    {
+        // not streamed
+        return 0;
+    }
+    
+    // fetch only once
+    delete manifest[path];
+
+    if (is_write)
+    {
+        // replaced by local write
+        return 0;
+    }
+
+    var output;
+    try
+    {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "data/" + path, false);
+        
+        if (Module.ENVIRONMENT_IS_PTHREAD)
+        {
+            xhr.responseType = "arraybuffer";
+        }
+        else
+        {
+            // cannot block for arraybuffer response in the main thread
+            xhr.overrideMimeType("text/plain;charset=x-user-defined");
+        }
+        xhr.send(null);
+        if (xhr.status !== 200)
+        {
+            console.error(path + " could not be loaded: " + xhr.status);
+            return 0;
+        }
+        var data = xhr.response;
+        var length = data.byteLength || data.length;
+        output = _malloc(length ? length : 1);
+        if (!output)
+        {
+            console.error(path + " could not be loaded: cannot allocate " + length + " bytes");
+            return 0;
+        }
+        if (Module.ENVIRONMENT_IS_PTHREAD)
+        {
+            HEAPU8.set(new Uint8Array(data), output);
+        }
+        else for (var i = 0; i < length; i++)
+        {
+            // copy bytes manually
+            HEAPU8[output + i] = data.charCodeAt(i) & 0xFF;
+        }
+        
+        setValue(out_len, length, "i32");
+        return output;
+    }
+    catch (e)
+    {
+        if (output)
+        {
+            _free(output);
+        }
+        console.error(path + " could not be loaded: " + e);
+        return 0;
+    }
+});
+
+void vfs_fetch(const char *filepath, int is_write)
+{
+    int len = 0;
+    void *buf = vfs_fetch_js(filepath, is_write, &len);
+    if (buf == NULL)
+    {
+        // does not exist
+        return;
+    }
+
+    // save fetched file to file system
+    int fd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+    if (fd >= 0)
+    {
+        const char *data = (const char *) buf;
+        while (len > 0)
+        {
+            int written = write(fd, data, len);
+            if (written <= 0) break;
+            data += written;
+            len -= written;
+        }
+        close(fd);
+    }
+
+    free(buf);
+}
+
+#endif
