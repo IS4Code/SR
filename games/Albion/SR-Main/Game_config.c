@@ -348,6 +348,10 @@ void Game_ReadConfig(void)
                 {
                     Game_MouseCursor = 2;
                 }
+                else if ( strcasecmp(param, "game") == 0 ) // param equals "game"
+                {
+                    Game_MouseCursor = 3;
+                }
             }
             else if ( strcasecmp(str, "Scaling") == 0 ) // str equals "Scaling"
             {

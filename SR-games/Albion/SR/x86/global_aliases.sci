@@ -199,3 +199,7 @@ loc_196D0E,loc_196D0E
 
 loc_17E164,loc_17E164
 loc_182010,loc_182010
+
+loc_17966C,loc_17966C
+loc_13EEDC,loc_13EEDC
+loc_137BCC,loc_137BCC

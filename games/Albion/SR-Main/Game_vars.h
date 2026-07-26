@@ -69,7 +69,8 @@ EXTERNAL_VARIABLE uint8_t Game_MinCursorData[10];	/* minimal cursor data */
 EXTERNAL_VARIABLE int Game_MouseCursor;				/* mouse cursor type in window
                                                        0: normal
                                                        1: minimal
-                                                       2: none */
+                                                       2: none
+                                                       3: game */
 EXTERNAL_VARIABLE int Game_PlayIntro;				/* play intro on start ? */
 EXTERNAL_VARIABLE int Game_SwitchWSAD;				/* switch WSAD keys for arrow keys ? */
 EXTERNAL_VARIABLE int Game_SwitchArrowKeys;			/* switch arrow keys for WSAD keys ? */
