@@ -594,6 +594,11 @@ void Game_RepositionMouse(void)
     Game_WarpMouse(Game_Picture2DeviceX((mouse_pos[1] * Game_VideoAspectXR + 32767) >> 16), Game_Picture2DeviceY((mouse_pos[0] * Game_VideoAspectYR + 32767) >> 16));
 }
 
+uint32_t Game_PositionMouse(Uint8 state, Sint32 x, Sint32 y)
+{
+    return Game_MouseMove(state, (Game_Device2PictureX(x) * Game_VideoAspectX + 32767) >> 16, (Game_Device2PictureY(y) * Game_VideoAspectY + 32767) >> 16);
+}
+
 int Game_ProcessMEvents(void)
 {
     int finish;
@@ -646,7 +651,7 @@ int Game_ProcessMEvents(void)
 
                     if (XPosDiff || YPosDiff)
                     {
-                        ret = Game_MouseMove(cevent->motion.state, (Game_Device2PictureX(newx) * Game_VideoAspectX + 32767) >> 16, (Game_Device2PictureY(newy) * Game_VideoAspectY + 32767) >> 16);
+                        ret = Game_PositionMouse(cevent->motion.state, newx, newy);
 
                         if ((Display_MouseLocked || Display_Fullscreen) && !ret)
                         {
@@ -700,6 +705,16 @@ int Game_ProcessMEvents(void)
                     uint32_t ret;
 
                     ret = Game_MouseButton(0 /*SDL_GetMouseState(NULL, NULL)*/, ((cevent->button.state == SDL_PRESSED)?1:2) + ((cevent->button.button == SDL_BUTTON_LEFT)?0:2));
+
+                    if (Game_MouseCursor == 3 && cevent->type == SDL_MOUSEBUTTONDOWN)
+                    {
+                        Game_CompareMPosition(cevent->button.x, cevent->button.y, &XPosDiff, &YPosDiff);
+
+                        if (XPosDiff || YPosDiff)
+                        {
+                            Game_PositionMouse(0, cevent->button.x, cevent->button.y);
+                        }
+                    }
 
                     if ((Display_MouseLocked || Display_Fullscreen) && !ret)
                     {
