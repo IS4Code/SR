@@ -31,5 +31,6 @@
 #define GAME_SCREEN_DIALOGUE 7
 
 uint16_t Game_ScreenType(void);
+uint16_t Game_RootScreenType(void);
 
 #endif /* _ALBION_ENGINE_H_INCLUDED_ */

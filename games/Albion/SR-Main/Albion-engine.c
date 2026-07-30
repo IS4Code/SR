@@ -47,3 +47,16 @@ uint16_t Game_ScreenType(void)
 {
     return loc_179164[loc_13EEEE].Screen_type;
 }
+
+uint16_t Game_RootScreenType(void)
+{
+    for (int i = (int) loc_13EEEE; i >= 0; i--)
+    {
+        if (loc_179164[i].Type == 0) /* SCREEN_MOD */
+        {
+            return loc_179164[i].Screen_type;
+        }
+    }
+
+    return GAME_SCREEN_NO_SCREEN;
+}
