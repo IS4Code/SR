@@ -4913,10 +4913,20 @@ static int32_t Game_SkyCos(int32_t angle)
     return Game_SkySin(angle + 4096);
 }
 
+static int64_t Game_FloorDiv64(int64_t dividend, int64_t divisor)
+{
+    int64_t quotient = dividend / divisor;
+    if ((dividend % divisor != 0) && (dividend < 0))
+    {
+        quotient--;
+    }
+    return quotient;
+}
+
 // standard rectilinear perspective projection (screen position = focal_length * tan(angle_from_center))
 static int32_t Game_SkyProjection(int32_t angle)
 {
-    return (int32_t)(((int64_t)g_dword_140004 * Game_SkySin(angle)) / Game_SkyCos(angle));
+    return (int32_t)Game_FloorDiv64(((int64_t)g_dword_140004 * Game_SkySin(angle)), Game_SkyCos(angle));
 }
 
 // loc_BE2E0
