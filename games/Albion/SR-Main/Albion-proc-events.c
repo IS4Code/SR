@@ -38,6 +38,16 @@ int Game_MovementEnabled(void)
     return (screen_type == GAME_SCREEN_MAP_2D) || (screen_type == GAME_SCREEN_MAP_3D);
 }
 
+static int Game_SwitchCtrl(void)
+{
+#if defined(__EMSCRIPTEN__)
+    // put sprint on Shift to prevent accidental Ctrl-W
+    return Game_SwitchWSAD && Game_MovementEnabled();
+#else
+    return 0;
+#endif
+}
+
 void Game_ProcessKEvents(void)
 {
     int finish;
@@ -79,6 +89,8 @@ void Game_ProcessKEvents(void)
 
     static int alt_code_state = 0;
     static unsigned int alt_code_value;
+    static uint8_t alt_held = 0;
+    static uint8_t ad_held = 0;
 
     VSyncTick = Game_VSyncTick;
     finish = 0;
@@ -136,11 +148,15 @@ void Game_ProcessKEvents(void)
                         case 'a':
                             ascii_code = 0;
                             scancode = 0x4b;
+                            if (cevent->key.state == SDL_PRESSED) ad_held |= 0x1;
+                            else ad_held &= ~0x1;
                             break;
                         case 'D':
                         case 'd':
                             ascii_code = 0;
                             scancode = 0x4d;
+                            if (cevent->key.state == SDL_PRESSED) ad_held |= 0x2;
+                            else ad_held &= ~0x2;
                             break;
                         case 'S':
                         case 's':
@@ -397,21 +413,25 @@ void Game_ProcessKEvents(void)
 
                             break;
                         case SDLK_RSHIFT:
-                            scancode = 0x36;
+                            scancode = Game_SwitchCtrl() ? 0x1d : 0x36;
 
                             break;
                         case SDLK_LSHIFT:
-                            scancode = 0x2a;
+                            scancode = Game_SwitchCtrl() ? 0x1d : 0x2a;
 
                             break;
                         case SDLK_RCTRL:
+                            scancode = Game_SwitchCtrl() ? 0x36 : 0x1d;
+
+                            break;
                         case SDLK_LCTRL:
-                            scancode = 0x1d;
+                            scancode = Game_SwitchCtrl() ? 0x2a : 0x1d;
 
                             break;
                         case SDLK_RALT:
                         case SDLK_LALT:
                             scancode = 0x38;
+                            alt_held = (cevent->key.state == SDL_PRESSED) ? 1 : 0;
 
                             if (cevent->type == SDL_KEYDOWN)
                             {
@@ -469,6 +489,7 @@ void Game_ProcessKEvents(void)
                 if (Game_InterruptTable[9] != 0)
                 {
                     keyboard_keys[scancode & 0x7f] = (cevent->key.state == SDL_PRESSED)?1:0;
+                    keyboard_keys[0x38] = (alt_held || ad_held != 0)?1:0;
                 }
 
                 if (cevent->key.state == SDL_PRESSED || alt_code_state == 3)
