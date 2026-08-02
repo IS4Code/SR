@@ -28,6 +28,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-engine.h"
+#include "Albion-mouse.h"
 #include "Albion-proc-events.h"
 #include "input.h"
 
@@ -584,6 +585,13 @@ static void Game_CompareMPosition(int x, int y, int *XPosDiff, int *YPosDiff)
     }
 }
 
+static int Game_MouseInBottomBar(int32_t device_y)
+{
+    int32_t picture_y = (Game_Device2PictureY(device_y) * Game_VideoAspectY + 32767) >> 16;
+    // bar height
+    return picture_y >= (240 - 48);
+}
+
 static void Game_WarpMouse(int x, int y)
 {
     SDL_Event event;
@@ -610,6 +618,8 @@ int Game_ProcessMEvents(void)
     VSyncTick = Game_VSyncTick;
     finish = 0;
 
+    Game_MouseLook_Update();
+
     while (!finish && Game_MQueueWrite != Game_MQueueRead)
     {
         cevent = &(Game_EventMQueue[Game_MQueueRead]);
@@ -617,6 +627,12 @@ int Game_ProcessMEvents(void)
         switch(cevent->type)
         {
             case SDL_MOUSEMOTION:
+                if (Game_MouseLook_Active())
+                {
+                    Game_MouseLook_Move(cevent->motion.xrel, cevent->motion.yrel);
+                    break;
+                }
+
                 //senquack - when in unscaled display mode, handle things a bit differently
                 //	since screen coordinates correspond directly to the game's framebuffer
                 //	coordinates, only shifted a bit
@@ -700,6 +716,23 @@ int Game_ProcessMEvents(void)
                 // case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONUP:
             case SDL_MOUSEBUTTONDOWN:
+                if (cevent->button.button == SDL_BUTTON_LEFT && Game_ScreenType() == GAME_SCREEN_MAP_3D)
+                {
+                    if (cevent->type == SDL_MOUSEBUTTONDOWN && cevent->button.clicks >= 2 &&
+                        !Game_MouseInBottomBar(cevent->button.y))
+                    {
+                        // double-click in 3D area = toggle mouse look
+                        Game_MouseLook_Toggle();
+                        break;
+                    }
+
+                    if (Game_MouseLook_Active())
+                    {
+                        // ignore clicks in mouse look
+                        break;
+                    }
+                }
+
                 if (cevent->button.button == SDL_BUTTON_LEFT ||
                     cevent->button.button == SDL_BUTTON_RIGHT)
                 {

@@ -514,6 +514,33 @@ void Game_ReadConfig(void)
                 }
             }
         }
+        else if ( strncasecmp(str, "Mouse_", 6) == 0 ) // str begins with "Mouse_"
+        {
+            // mouse settings
+
+            str += 6;
+
+            if ( strcasecmp(str, "Look") == 0 ) // str equals "Look"
+            {
+                if ( strcasecmp(param, "yes") == 0 ) // param equals "yes"
+                {
+                    Game_MouseLookEnabled = 1;
+                }
+                else if ( strcasecmp(param, "no") == 0 ) // param equals "no"
+                {
+                    Game_MouseLookEnabled = 0;
+                }
+            }
+            else if ( strcasecmp(str, "LookSensitivity") == 0 ) // str equals "Sensitivity"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int > 0)
+                {
+                    Game_MouseLookSensitivity = num_int;
+                }
+            }
+        }
 
     }
 
