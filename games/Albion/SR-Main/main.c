@@ -1005,6 +1005,11 @@ static int Game_Initialize(void)
     Game_ScaleFactor = 0;
     Game_ExtraScalerThreads = -1;
 
+    Game_FieldOfViewDegrees = 44.22;
+    Game_PitchFovCompensation = 0;
+    Game_TileCullNearTolerancePercent = 0;
+    Game_TileCullAngleTolerancePercent = 0;
+
     Game_Window = NULL;
     Game_Renderer = NULL;
     Game_Texture[0] = NULL;

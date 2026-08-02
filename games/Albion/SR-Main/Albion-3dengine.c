@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <memory.h>
 #include <string.h>
+#include <math.h>
 #if !defined(__cplusplus)
 #if defined(_MSC_VER) && _MSC_VER < 1800
 typedef int bool;
@@ -162,6 +163,13 @@ static int32_t Game_ViewportMinimumX, Game_ViewportMaximumX, Game_ViewportMinimu
 static uint16_t Game_ResizeWidthMult, Game_ResizeWidthDiv, Game_ResizeHeightMult, Game_ResizeHeightDiv;
 static int32_t Game_mul_dword_140004_ResizeWidthMult, Game_mul_dword_140008_ResizeHeightMult;
 
+// accumulator mechanism to preserve smooth sky scrolling - start with a sentinel value
+#define GAME_SKY_RATE_PRECISION 65536
+static int32_t Game_SkyEffectiveA6Scaled = GAME_SKY_RATE_PRECISION;
+
+static int64_t Game_SkyScrollAccumulator = 0;
+static int32_t Game_SkyLastViewAngle = 0;
+
 //static struct struc_1 Game_stru_1414AC[D3_MAXIMUM_VIEWPORT_WIDTH + 3];
 //static struct struc_7 Game_unk_144F50[2 * (D3_MAXIMUM_VIEWPORT_HEIGHT + 1)];
 static struct struc_1 *Game_stru_1414AC = NULL;
@@ -170,6 +178,7 @@ static void *Game_unk_144F50 = NULL;
 #define g_viewport_offsetx loc_14A8E8
 #define g_viewport_offsety loc_14A8EA
 // draw_3dscene
+#define g_horizon_y loc_14A492
 #define g_word_14A4C8  loc_14A4C8
 #define d3_param_word_196D0C  loc_196D0C
 #define g_dword_14A47C loc_14A47C
@@ -373,6 +382,7 @@ extern "C" {
 
 extern uint16_t g_viewport_offsetx;
 extern uint16_t g_viewport_offsety;
+extern int16_t g_horizon_y;
 // draw_3dscene
 extern int16_t g_word_14A4C8;
 extern int16_t d3_param_word_196D0C;
@@ -3134,7 +3144,9 @@ static void draw_floor_and_ceiling(void)
 
                 distance = (firstline_mapgrid_point[1] >> 1) + (nextline_mapgrid_point[3] >> 1);
                 var_54 = &(firstline_mapgrid_point[var08]);
-                if ( distance < var_3C )
+
+                // near-clip pre-test tolerance
+                if ( distance < var_3C - (llabs((int64_t)var_3C) * Game_TileCullNearTolerancePercent) / 100 )
                 {
                     if ( var_1C )
                     {
@@ -3144,13 +3156,12 @@ static void draw_floor_and_ceiling(void)
                     goto LABEL_24;
                 }
 
-                if ( (int32_t)((abs((nextline_mapgrid_point[2] >> 1) + (firstline_mapgrid_point[0] >> 1)) - var_58) * g_dword_140004) > distance * g_viewport_maximum_x )
+                // horizontal visibility pre-test tolerance
+                if ( (int64_t)(abs((nextline_mapgrid_point[2] >> 1) + (firstline_mapgrid_point[0] >> 1)) - var_58) * Game_mul_dword_140004_ResizeWidthMult >
+                     (int64_t)distance * Game_ViewportMaximumX * Game_ResizeWidthDiv +
+                     (llabs((int64_t)distance) * Game_ViewportMaximumX * Game_ResizeWidthDiv * Game_TileCullAngleTolerancePercent) / 100 )
                 {
-                    if ( !var_1C )
                         goto LABEL_24;
-
-                    firstline_mapgrid_point = var_54;
-                    break;
                 }
 
                 d3_param_dword_1A5E00 = g_dword_196CEC;
@@ -3203,6 +3214,38 @@ static void draw_floor_and_ceiling(void)
 }
 
 
+// replaces var_4 computation to accumulate delta from the last observed angle
+static int32_t Game_SkyComputeVar4(int32_t texture_width)
+{
+    int32_t current_angle = g_view_angle_fp14;
+    int32_t delta = current_angle - Game_SkyLastViewAngle;
+
+    // signed wraparound
+    if (delta > 8192) delta -= 16384;
+    else if (delta < -8192) delta += 16384;
+
+    Game_SkyScrollAccumulator += (int64_t)texture_width * Game_SkyEffectiveA6Scaled * (-32 * delta);
+    Game_SkyLastViewAngle = current_angle;
+
+    // periodic renormalization
+    {
+        const int64_t renorm_unit = 32LL * 16384 * GAME_SKY_RATE_PRECISION;
+        const int64_t renorm_threshold = renorm_unit << 24;
+        if (Game_SkyScrollAccumulator > renorm_threshold || Game_SkyScrollAccumulator < -renorm_threshold)
+        {
+            Game_SkyScrollAccumulator -= (Game_SkyScrollAccumulator / renorm_unit) * renorm_unit;
+        }
+    }
+
+    int32_t var_4 = (int32_t)(Game_SkyScrollAccumulator / (16384 * (int64_t)GAME_SKY_RATE_PRECISION));
+    while (var_4 < 0)
+    {
+        var_4 += 32 * texture_width;
+    }
+    return var_4;
+}
+
+
 static void draw_scaledres_sky(uint8_t *texture_ptr, uint8_t *column_ptr, int32_t starty, int32_t column_height, int32_t texture_width, int32_t a6, uint32_t a7, uint32_t factor)
 {
     int32_t var_4;
@@ -3222,7 +3265,7 @@ static void draw_scaledres_sky(uint8_t *texture_ptr, uint8_t *column_ptr, int32_
 
     column_ptr += starty * Game_ScreenWidth;
 
-    for ( var_4 = ((texture_width * a6) * (int64_t)(-32 * (int32_t)g_view_angle_fp14)) / 16384; var_4 < 0; var_4 += 32 * texture_width ) ;
+    var_4 = Game_SkyComputeVar4(texture_width);
 
     counter1 = 0;
     fpcounter = 0;
@@ -3291,7 +3334,7 @@ static void draw_hires_sky(uint8_t *texture_ptr, uint8_t *column_ptr, int32_t st
 
     column_ptr += starty * Game_ScreenWidth;
 
-    for ( var_4 = ((texture_width * a6) * (int64_t)(-32 * (int32_t)g_view_angle_fp14)) / 16384; var_4 < 0; var_4 += 32 * texture_width ) ;
+    var_4 = Game_SkyComputeVar4(texture_width);
 
     counter1 = 0;
     fpcounter = 0;
@@ -3354,7 +3397,7 @@ static void draw_lores_sky(uint8_t *texture_ptr, uint8_t *column_ptr, int32_t st
 
     column_ptr += starty * Game_ScreenWidth;
 
-    for ( var_4 = ((texture_width * a6) * (int64_t)(-32 * (int32_t)g_view_angle_fp14)) / 16384; var_4 < 0; var_4 += 32 * texture_width ) ;
+    var_4 = Game_SkyComputeVar4(texture_width);
 
     counter1 = 0;
     fpcounter = 0;
@@ -4591,15 +4634,44 @@ static void prepare_mapgrid(void)
 
     if ( var07 && var00 )
     {
-        d3_mapgrid_start_position_y = var06;
-        d3_mapgrid_start_position_x = var08;
+        int32_t player_tile_x = var_38;
+        int32_t player_tile_y = var_34;
 
-        // clamp width/height to prevent buffer overflow
+        // clamp width/height to prevent buffer overflow, keeping the player's tile inside
         while ( (int64_t)(d3_mapgrid_width + 1) * (var00 + 1) > D3_MAXIMUM_NUMBER_OF_MAPGRID_POINTS )
         {
-            if ( d3_mapgrid_width > var00 ) d3_mapgrid_width--;
-            else var00--;
+            if ( d3_mapgrid_width > var00 )
+            {
+                int32_t dist_from_left = player_tile_x - var08;
+                int32_t dist_from_right = (var08 + d3_mapgrid_width) - player_tile_x;
+                if (dist_from_right >= dist_from_left)
+                {
+                    d3_mapgrid_width--; // trim the far (right) edge
+                }
+                else
+                {
+                    var08++;
+                    d3_mapgrid_width--; // trim the far (left) edge -- move the start position in
+                }
+            }
+            else
+            {
+                int32_t dist_from_top = player_tile_y - var06;
+                int32_t dist_from_bottom = (var06 + var00) - player_tile_y;
+                if (dist_from_bottom >= dist_from_top)
+                {
+                    var00--; // trim the far (bottom) edge
+                }
+                else
+                {
+                    var06++;
+                    var00--; // trim the far (top) edge -- move the start position in
+                }
+            }
         }
+
+        d3_mapgrid_start_position_y = var06;
+        d3_mapgrid_start_position_x = var08;
 
         var07 = (d3_mapgrid_width + 1) * (var00 + 1);
         d3_skip_draw_list_sm1234 = 0;
@@ -4742,8 +4814,16 @@ static int32_t Game_RoundedScale(int32_t a, int32_t b, int32_t divisor)
 static void Game_AspectRatioRecompute(int32_t ratio)
 {
     int32_t result1 = Game_RoundedScale(226, ratio, 100);
-    g_dword_140004 = Game_RoundedScale(256, g_viewport_width, 208);
-    g_dword_140008 = Game_RoundedScale(result1, g_viewport_height, 112);
+    int32_t stock_focal_x = Game_RoundedScale(256, g_viewport_width, 208);
+    int32_t stock_focal_y = Game_RoundedScale(result1, g_viewport_height, 112);
+
+    // apply FOV scale
+    double half_fov_rad = (Game_FieldOfViewDegrees * 0.5) * (M_PI / 180.0);
+    double desired_focal_x = (double) g_viewport_maximum_x / tan(half_fov_rad);
+    double fov_ratio = desired_focal_x / (double) stock_focal_x;
+
+    g_dword_140004 = (int32_t) llround(desired_focal_x);
+    g_dword_140008 = (int32_t) llround((double) stock_focal_y * fov_ratio);
 }
 
 #ifdef __cplusplus
@@ -4924,9 +5004,33 @@ static int64_t Game_FloorDiv64(int64_t dividend, int64_t divisor)
 }
 
 // standard rectilinear perspective projection (screen position = focal_length * tan(angle_from_center))
+static int32_t Game_SkyProjectionWithF(int32_t angle, int32_t f)
+{
+    return (int32_t)Game_FloorDiv64((int64_t)f * Game_SkySin(angle), Game_SkyCos(angle));
+}
+
 static int32_t Game_SkyProjection(int32_t angle)
 {
-    return (int32_t)Game_FloorDiv64(((int64_t)g_dword_140004 * Game_SkySin(angle)), Game_SkyCos(angle));
+    return Game_SkyProjectionWithF(angle, g_dword_140004);
+}
+
+// parametrized by f for use in Game_AspectRatioRecompute
+static void Game_SkyAngleBoundsForF(int32_t f, int32_t *out_angle_lower, int32_t *out_angle_upper)
+{
+    int32_t angle_lower = -(g_dword_13FFE4 / 2 + 1500);
+    while (Game_SkyProjectionWithF(angle_lower, f) < g_viewport_minimum_x)
+    {
+        angle_lower++;
+    }
+
+    int32_t angle_upper = g_dword_13FFE4 / 2 + 1500;
+    while (Game_SkyProjectionWithF(angle_upper, f) > g_viewport_maximum_x + 1)
+    {
+        angle_upper--;
+    }
+
+    *out_angle_lower = angle_lower;
+    *out_angle_upper = angle_upper;
 }
 
 // loc_BE2E0
@@ -4936,20 +5040,13 @@ void CCALL Init_3DM_SkyTable_Core(void)
     if (g_sky_texture_width == 0) return;
     if (g_viewport_width == 0) return;
 
-    int32_t angle_lower = -(g_dword_13FFE4 / 2 + 1500);
-    while (Game_SkyProjection(angle_lower) < g_viewport_minimum_x)
-    {
-        angle_lower++;
-    }
-
-    int32_t angle_upper = g_dword_13FFE4 / 2 + 1500;
-    while (Game_SkyProjection(angle_upper) > g_viewport_maximum_x + 1)
-    {
-        angle_upper--;
-    }
+    int32_t angle_lower, angle_upper;
+    Game_SkyAngleBoundsForF(g_dword_140004, &angle_lower, &angle_upper);
 
     int32_t scale_num = ((int32_t)g_word_14A496 * g_dword_13FFE4 * (int32_t)g_sky_texture_width) << 5;
     int32_t scale_denom = (angle_upper - angle_lower) << 14;
+
+    Game_SkyEffectiveA6Scaled = Game_RoundedScale((int32_t)g_word_14A496 * g_dword_13FFE4, GAME_SKY_RATE_PRECISION, angle_upper - angle_lower);
 
     if (g_viewport_minimum_x > g_viewport_maximum_x) return;
 
@@ -5125,8 +5222,22 @@ void CCALL draw_3dscene(void)
         }
     }
 
-    Game_mul_dword_140004_ResizeWidthMult = g_dword_140004 * Game_ResizeWidthMult;
-    Game_mul_dword_140008_ResizeHeightMult = g_dword_140008 * Game_ResizeHeightMult;
+    int32_t Game_Fov3D_BaseFocalX = g_dword_140004;
+    int32_t Game_Fov3D_BaseFocalY = g_dword_140008;
+    int32_t Game_Fov3D_BaseFrustumLateral = g_dword_13FFE0;
+
+    double Game_Fov3D_Pitch = Game_PitchFovCompensation ? atan2((double) g_horizon_y, (double) Game_Fov3D_BaseFocalY) : 0.0;
+    double Game_Fov3D_CosPitch = cos(Game_Fov3D_Pitch);
+    double Game_Fov3D_PreciseFocalX = (double) Game_Fov3D_BaseFocalX * Game_Fov3D_CosPitch;
+    double Game_Fov3D_PreciseFocalY = (double) Game_Fov3D_BaseFocalY * Game_Fov3D_CosPitch;
+    g_dword_13FFE0 = (int32_t) llround((double) Game_Fov3D_BaseFrustumLateral / Game_Fov3D_CosPitch);
+    g_dword_140004 = (int32_t) llround(Game_Fov3D_PreciseFocalX);
+    g_dword_140008 = (int32_t) llround(Game_Fov3D_PreciseFocalY);
+
+    Init_3DM_SkyTable_Core();
+
+    Game_mul_dword_140004_ResizeWidthMult = (int32_t) llround(Game_Fov3D_PreciseFocalX * (double) Game_ResizeWidthMult);
+    Game_mul_dword_140008_ResizeHeightMult = (int32_t) llround(Game_Fov3D_PreciseFocalY * (double) Game_ResizeHeightMult);
 
     d3_param_word_196D0C = g_word_14A4C8;
     d3_without_ceiling = g_dword_14A47C & 1;
@@ -5144,6 +5255,15 @@ void CCALL draw_3dscene(void)
     g_dword_196CEC = ((uint32_t)g_word_14A490) << g_byte_13FFAE;
     d3_word_196D0A = g_word_14A480[0] << g_byte_13FFAE;
     d3_word_196D08 = g_word_14A486[0] << g_byte_13FFAE;
+
+    if (g_viewport_minimum_y != 0)
+    {
+        g_dword_143D6C = (int32_t)(((int64_t)g_dword_140008 * (g_dword_196CEC - g_dword_14000C)) / g_viewport_minimum_y);
+    }
+    if (g_viewport_maximum_y != 0)
+    {
+        g_dword_143D70 = (int32_t)(((int64_t)g_dword_140008 * g_dword_196CEC) / g_viewport_maximum_y);
+    }
 
     if ( g_select_mapobject != NULL )
     {
@@ -5275,5 +5395,9 @@ void CCALL draw_3dscene(void)
         }
         memcpy(ptr2, ptr, 360*height);
     }
+
+    g_dword_140004 = Game_Fov3D_BaseFocalX;
+    g_dword_140008 = Game_Fov3D_BaseFocalY;
+    g_dword_13FFE0 = Game_Fov3D_BaseFrustumLateral;
 }
 

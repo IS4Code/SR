@@ -104,6 +104,11 @@ EXTERNAL_VARIABLE int Game_ScaleFactor;				/* factor for advanced scaler: 0 = ma
 EXTERNAL_VARIABLE int Game_ExtraScalerThreads;		/* number of extra threads for advanced scaler: -1 = auto */
 EXTERNAL_VARIABLE Game_Advanced_Flip_Procedure Display_Advanced_Flip_Procedure;	/* advanced flip procedure */
 
+EXTERNAL_VARIABLE double Game_FieldOfViewDegrees;				/* full horizontal 3D field of view, in degrees */
+EXTERNAL_VARIABLE uint32_t Game_PitchFovCompensation;			/* widen FOV based on camera pitch */
+EXTERNAL_VARIABLE int32_t Game_TileCullNearTolerancePercent;	/* draw_floor_and_ceiling near-clip pre-test tolerance */
+EXTERNAL_VARIABLE int32_t Game_TileCullAngleTolerancePercent;	/* draw_floor_and_ceiling xvis pre-test tolerance */
+
 EXTERNAL_VARIABLE SDL_Window *Game_Window;
 EXTERNAL_VARIABLE SDL_Renderer *Game_Renderer;
 EXTERNAL_VARIABLE SDL_Texture *Game_Texture[3];
