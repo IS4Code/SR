@@ -264,6 +264,8 @@ static void *Game_unk_144F50 = NULL;
 // draw_lores_sky
 #define g_view_angle_fp14 loc_196D10
 #define g_word_1966B0 loc_1966B0
+// quarter-wave sine table
+#define g_word_143E84 loc_143E84
 // draw_hires_sky
 // draw_floor_and_ceiling
 #define g_dword_143D6C loc_143D6C
@@ -318,6 +320,23 @@ static void *Game_unk_144F50 = NULL;
 // sm123_proc
 #define g_viewport_zero_x_column       loc_196CDC
 #define g_palettes           loc_196CFC
+#define g_byte_13FFA9 loc_13FFA9
+// Set_3DM_AspectRatio
+#define g_dword_140018 loc_140018
+// Set_3DM_SquareSize
+#define g_byte_13FFAD loc_13FFAD
+#define g_word_14A4A0 loc_14A4A0
+#define g_word_14A49E loc_14A49E
+// Init_3DM
+#define g_byte_13FFA8 loc_13FFA8
+#define g_dword_14A4C4 loc_14A4C4
+#define g_dword_13FFE4 loc_13FFE4
+#define g_dword_13FFD0 loc_13FFD0
+#define g_dword_13FFCC loc_13FFCC
+// Set_3DM_WindowSize
+#define g_dword_14A4DA loc_14A4DA
+#define g_byte_140014 loc_140014
+#define g_word_14001C loc_14001C
 // sm4_proc
 #define g_dword_13FFBC loc_13FFBC
 // draw_solid_tile
@@ -413,6 +432,14 @@ extern int32_t g_dword_140004;
 extern PTR32_ALIGN(PTR32(void),2) g_dword_14A4AE;
 extern int32_t g_dword_14000C;
 extern uint16_t g_word_14A4CA[4];
+extern PTR32(uint8_t) g_dword_14A4DA;
+extern uint8_t g_byte_140014;
+extern uint16_t g_word_14001C;
+extern uint8_t g_byte_13FFA8;
+extern int32_t g_dword_14A4C4;
+extern int32_t g_dword_13FFE4;
+extern int32_t g_dword_13FFD0;
+extern int32_t g_dword_13FFCC;
 // insert_into_list_sm1234
 extern struct struc_8 d3_mapobjects_list_index[D3_MAXIMUM_NUMBER_OF_MAPOBJECTS];
 extern struct struc_2 d3_stru_1999E8;
@@ -449,6 +476,7 @@ extern int32_t g_viewport_width;
 // draw_lores_sky
 extern int16_t g_view_angle_fp14; // player view angle 0..16383
 extern uint16_t g_word_1966B0[640];
+extern int16_t g_word_143E84[2049]; // quarter-wave (0..0x1000 even byte offsets) sine table
 // draw_hires_sky
 // draw_floor_and_ceiling
 extern int32_t g_dword_143D6C;
@@ -503,6 +531,11 @@ extern int32_t d3_sm_dword_143CF8_fp8; // sm1_subproc parameter
 // sm123_proc
 extern int32_t g_viewport_zero_x_column;
 extern PTR32(uint8_t) g_palettes;
+extern uint8_t g_byte_13FFA9;
+extern int32_t g_dword_140018;
+extern uint8_t g_byte_13FFAD;
+extern uint16_t g_word_14A4A0;
+extern uint16_t g_word_14A49E;
 // sm4_proc
 extern PTR32(uint16_t) g_dword_13FFBC; // ??? - read only (0)
 // draw_solid_tile
@@ -4558,19 +4591,18 @@ static void prepare_mapgrid(void)
 
     if ( var07 && var00 )
     {
-        var07 = (var07 + 1) * (var00 + 1);
         d3_mapgrid_start_position_y = var06;
         d3_mapgrid_start_position_x = var08;
 
-        if ( var07 <= D3_MAXIMUM_NUMBER_OF_MAPGRID_POINTS )
+        // clamp width/height to prevent buffer overflow
+        while ( (int64_t)(d3_mapgrid_width + 1) * (var00 + 1) > D3_MAXIMUM_NUMBER_OF_MAPGRID_POINTS )
         {
-            d3_skip_draw_list_sm1234 = 0;
+            if ( d3_mapgrid_width > var00 ) d3_mapgrid_width--;
+            else var00--;
         }
-        else
-        {
-            var07 = D3_MAXIMUM_NUMBER_OF_MAPGRID_POINTS;
-            d3_skip_draw_list_sm1234 = 1;
-        }
+
+        var07 = (d3_mapgrid_width + 1) * (var00 + 1);
+        d3_skip_draw_list_sm1234 = 0;
 
         d3_mapgrid_number_of_points = var07;
         d3_mapgrid_height = var00;
@@ -4601,6 +4633,333 @@ static void prepare_mapgrid(void)
 #undef var_2C
 #undef var_28
 #undef var_24
+}
+
+
+#define ERR_VIEW_DEPTH 0xf010 // 3DM.H
+
+// seg01_code.llinc:649158 (loc_94734) through :649274 (loc_94758's ret)
+static int32_t Game_ViewDepthLateral(int32_t view_depth)
+{
+    int32_t viewport_ratio = ((g_viewport_maximum_x << 2) + g_viewport_maximum_x) >> 2; // == viewport_maximum_x * 5 / 4
+    return (int32_t)(((int64_t)viewport_ratio * view_depth) / g_dword_140004);
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int32_t CCALL Set_3DM_ViewDepth(int32_t view_depth)
+{
+    view_depth &= 0xffff;
+
+    if (view_depth < 5) return ERR_VIEW_DEPTH; // MIN_VIEW_DEPTH
+    if (view_depth > 40) return ERR_VIEW_DEPTH; // MAX_VIEW_DEPTH
+
+    g_dword_13FFDC = view_depth;
+    g_dword_13FFE0 = Game_ViewDepthLateral(view_depth);
+
+    return 0;
+}
+
+
+// seg01_code.llinc, loc_948C0 (356 bytes) through loc_94A1D's ret
+// the tail of the original is called upon return 0 via tcall
+#define ERR_3DM_WINDOW_SIZE 0xf004 // 3DM.H
+#define ERR_3DM_DATA 0xf00c // 3DM.H
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int32_t CCALL Set_3DM_WindowSize_Core(int32_t width, int32_t height)
+{
+    int32_t screen_width;
+
+    width &= 0xffff;
+    if (width < 50) return ERR_3DM_WINDOW_SIZE; // MIN_WINDOW_WIDTH
+    if (width > 640) return ERR_3DM_WINDOW_SIZE; // MAX_WINDOW_WIDTH
+
+    height &= 0xffff;
+    if (height < 40) return ERR_3DM_WINDOW_SIZE; // MIN_WINDOW_HEIGHT
+    if (height > 400) return ERR_3DM_WINDOW_SIZE; // MAX_WINDOW_HEIGHT
+
+    g_viewport_height = height;
+    g_viewport_width = width;
+
+    if (g_dword_14A4DA == NULL) return ERR_3DM_DATA; // not yet initialized
+
+    screen_width = *(uint16_t *)(g_dword_14A4DA + 0x14);
+
+    g_viewport_height_0 = height;
+    g_screen_width = screen_width;
+
+    if ((uint32_t)width > (uint32_t)screen_width)
+    {
+        g_viewport_width = screen_width;
+    }
+
+    g_viewport_zero_x_column = g_viewport_width / 2;
+    g_viewport_zero_y_row = g_viewport_height / 2;
+    g_viewport_minimum_x = -g_viewport_zero_x_column;
+    g_viewport_maximum_x = g_viewport_width - g_viewport_zero_x_column - 1;
+    g_viewport_minimum_y = -g_viewport_zero_y_row;
+    g_viewport_maximum_y = g_viewport_height - g_viewport_zero_y_row - 1;
+    g_byte_140014 = 1;
+    g_word_14001C = 0x7fff;
+
+    return 0;
+}
+
+
+// seg01_code.llinc, loc_94A24 (40 bytes) through loc_94A3A's ret
+#ifdef __cplusplus
+extern "C"
+#endif
+int32_t CCALL Set_3DM_ShadeTable(int32_t shade_table)
+{
+    if (shade_table == 0)
+    {
+        g_byte_13FFA9 = 0;
+        return ERR_3DM_DATA;
+    }
+
+    g_palettes = (uint8_t *)(void *)shade_table;
+    g_byte_13FFA9 = 1;
+
+    return 0;
+}
+
+
+// loc_B473F
+static int32_t Game_RoundedScale(int32_t a, int32_t b, int32_t divisor)
+{
+    return (int32_t)(((int64_t)a * b + divisor / 2) / divisor);
+}
+
+#define ERR_3DM_RATIO 0xf00f // 3DM.H
+
+// seg01_code.llinc, loc_946B0 (216 bytes) through loc_9472B's ret
+// tail calls loc_BFA94
+static void Game_AspectRatioRecompute(int32_t ratio)
+{
+    int32_t result1 = Game_RoundedScale(226, ratio, 100);
+    g_dword_140004 = Game_RoundedScale(256, g_viewport_width, 208);
+    g_dword_140008 = Game_RoundedScale(result1, g_viewport_height, 112);
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int32_t CCALL Set_3DM_AspectRatio_Core(int32_t ratio)
+{
+    ratio &= 0xffff;
+    if (ratio < 50) return ERR_3DM_RATIO; // MIN_RATIO
+    if (ratio > 150) return ERR_3DM_RATIO; // MAX_RATIO
+
+    g_dword_140018 = ratio;
+    Game_AspectRatioRecompute(ratio);
+
+    return 0;
+}
+
+
+// seg01_code.llinc, loc_94788 (176 bytes) through loc_947D7's ret
+static int32_t Game_SquareSizeCore(int32_t masked_size)
+{
+    int32_t exponent;
+    uint8_t byte_val;
+
+    if (masked_size < 128 || masked_size > 1024) return -1; // MIN/MAX_SQUARE_CM
+
+    for (exponent = 1; exponent < 15; exponent++)
+    {
+        if ((1 << exponent) == masked_size) break;
+    }
+    if (exponent >= 15) return -1; // not an exact power of 2 in range
+
+    g_byte_13FFAE = 1;
+    g_dword_13FFC4 = 0xb;
+
+    g_dword_13FFFC = exponent + 1;
+    g_mapgrid_point_distance = masked_size * 2; // loc_13FFF8
+
+    byte_val = (uint8_t)(8 - (uint8_t)(exponent + 1));
+    byte_val = (uint8_t)(byte_val + g_dword_13FFC8);
+    g_byte_13FFAD = byte_val;
+
+    g_word_14A4A0 = (uint16_t)masked_size;
+    g_dword_140000 = 0x50;
+    g_dword_14000C = (int32_t)g_word_14A49E * 2;
+
+    return exponent;
+}
+
+#define ERR_3DM_SQUARE_SIZE 0xf002 // 3DM.H
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int32_t CCALL Set_3DM_SquareSize(int32_t square_size_cm)
+{
+    int32_t masked_size = square_size_cm & 0xffff;
+
+    if (Game_SquareSizeCore(masked_size) < 0) return ERR_3DM_SQUARE_SIZE;
+
+    return 0;
+}
+
+
+#define ERR_3DM_MAP_SIZE 0xf00a // 3DM.H
+
+#ifdef __cplusplus
+extern "C"
+#endif
+// seg01_code.llinc, loc_943B0 (768 bytes) through loc_946A9's ret
+// tail calls loc_948C0, loc_B492C, and loc_BCEB0
+int32_t CCALL Init_3DM_Core(void)
+{
+    int32_t square_size;
+    int32_t view_depth;
+    int32_t upper16;
+    uint32_t combined;
+
+    if (g_byte_13FFA8 != 0) return 0; // already initialized
+
+    square_size = g_word_14A4A0;
+    if (square_size < 128 || square_size > 1024) return ERR_3DM_SQUARE_SIZE; // MIN/MAX_SQUARE_CM
+
+    if (g_viewport_width < 50 || g_viewport_width > 640) return ERR_3DM_WINDOW_SIZE; // MIN/MAX_WINDOW_WIDTH
+    if (g_viewport_height < 40 || g_viewport_height > 400) return ERR_3DM_WINDOW_SIZE; // MIN/MAX_WINDOW_HEIGHT
+
+    if (g_dword_14A4DA == NULL) return ERR_3DM_DATA;
+    if (*(uint32_t *)(g_dword_14A4DA + 0xa) == 0) return ERR_3DM_DATA;
+    if (*(uint16_t *)(g_dword_14A4DA + 0x14) == 0) return ERR_3DM_DATA;
+    if (g_dword_14A4C4 == 0) return ERR_3DM_DATA; // Shade_table
+
+    // one-time baseline constant -- also read by the sky-table builder (loc_BE2E0, unported)
+    g_byte_13FFAE = 1;
+    g_dword_13FFC4 = 0xb;
+    g_dword_13FFE4 = (int32_t)(((int64_t)442 * 16384) / 3600);
+
+    // recompute g_dword_140004/140008 from the persisted aspect ratio
+    Game_AspectRatioRecompute(g_dword_140018);
+
+    view_depth = g_dword_13FFDC & 0xffff;
+    if (view_depth >= 5 && view_depth <= 40) // MIN/MAX_VIEW_DEPTH
+    {
+        g_dword_13FFDC = view_depth;
+        g_dword_13FFE0 = Game_ViewDepthLateral(view_depth);
+    }
+
+    // "darken" shading depth index: 6 if g_byte_13FFAA is unset, else 5
+    g_dword_13FFC8 = (g_byte_13FFAA == 0) ? 6 : 5;
+    g_word_196D0E = (int16_t)((1 << g_dword_13FFC8) - 1); // bitmask
+
+    upper16 = *(int32_t *)&d3_param_word_196D0C >> 16; // arithmetic shift, matches the original 'sar'
+    combined = ((uint32_t)upper16 << 8) | (uint32_t)upper16;
+    g_byte_13FFAD = 0x10; // overwritten again below by Game_SquareSizeCore
+    g_dword_13FFCC = (int32_t)combined;
+    g_dword_13FFD0 = (int32_t)~combined;
+
+    if (g_mapdata_width > 100) return ERR_3DM_MAP_SIZE; // MAX_MAP_WIDTH
+    if (g_mapdata_height > 100) return ERR_3DM_MAP_SIZE; // MAX_MAP_HEIGHT
+
+    if (Game_SquareSizeCore(g_word_14A4A0) < 0) return ERR_3DM_SQUARE_SIZE;
+
+    return 0;
+}
+
+
+// seg01_code.llinc, loc_BE2E0 through loc_BE438's ret
+static int32_t Game_SkySinTableLookup(int32_t angle, int32_t *is_odd)
+{
+    int32_t negated = 0;
+    int32_t folded = angle & 0x3fff;
+
+    if ((uint32_t)folded > 0x2000)
+    {
+        negated = 1;
+        folded = 0x4000 - folded;
+    }
+    if ((uint32_t)folded > 0x1000)
+    {
+        folded = 0x2000 - folded;
+    }
+
+    *is_odd = folded & 1;
+    folded &= ~1;
+
+    int32_t value = g_word_143E84[folded >> 1];
+    return negated ? -value : value;
+}
+
+// loc_B479B
+static int32_t Game_SkySin(int32_t angle)
+{
+    int32_t is_odd;
+    int32_t value = Game_SkySinTableLookup(angle, &is_odd);
+
+    if (is_odd)
+    {
+        int32_t value2 = Game_SkySinTableLookup(angle + 1, &is_odd);
+        value = (value + value2) >> 1; // matches the original's `sar eax, 1`, not (a+b)/2
+    }
+
+    return value;
+}
+
+// loc_B47C4
+static int32_t Game_SkyCos(int32_t angle)
+{
+    return Game_SkySin(angle + 4096);
+}
+
+// standard rectilinear perspective projection (screen position = focal_length * tan(angle_from_center))
+static int32_t Game_SkyProjection(int32_t angle)
+{
+    return (int32_t)(((int64_t)g_dword_140004 * Game_SkySin(angle)) / Game_SkyCos(angle));
+}
+
+// loc_BE2E0
+void CCALL Init_3DM_SkyTable_Core(void)
+{
+    if (g_word_14A496 == 0) return;
+    if (g_sky_texture_width == 0) return;
+    if (g_viewport_width == 0) return;
+
+    int32_t angle_lower = -(g_dword_13FFE4 / 2 + 1500);
+    while (Game_SkyProjection(angle_lower) < g_viewport_minimum_x)
+    {
+        angle_lower++;
+    }
+
+    int32_t angle_upper = g_dword_13FFE4 / 2 + 1500;
+    while (Game_SkyProjection(angle_upper) > g_viewport_maximum_x + 1)
+    {
+        angle_upper--;
+    }
+
+    int32_t scale_num = ((int32_t)g_word_14A496 * g_dword_13FFE4 * (int32_t)g_sky_texture_width) << 5;
+    int32_t scale_denom = (angle_upper - angle_lower) << 14;
+
+    if (g_viewport_minimum_x > g_viewport_maximum_x) return;
+
+    uint16_t *table_ptr = g_word_1966B0;
+    int32_t angle_counter = angle_lower;
+    int32_t outer_index = g_viewport_minimum_x;
+
+    for (;;)
+    {
+        *table_ptr = (uint16_t)(((int64_t)(angle_counter - angle_lower) * scale_num) / scale_denom);
+        table_ptr++;
+
+        while (Game_SkyProjection(angle_counter) <= outer_index)
+        {
+            angle_counter++;
+        }
+
+        outer_index++;
+        if (outer_index > g_viewport_maximum_x) break;
+    }
 }
 
 

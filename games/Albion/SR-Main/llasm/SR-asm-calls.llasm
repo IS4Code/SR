@@ -26,6 +26,13 @@ include SR-asm-calls.llinc
 func Game_errno
 
 funcv draw_3dscene
+func Set_3DM_ViewDepth view_depth
+func Set_3DM_WindowSize_Core width, height
+func Set_3DM_ShadeTable shade_table
+func Set_3DM_AspectRatio_Core ratio
+func Set_3DM_SquareSize square_size_cm
+func Init_3DM_Core
+funcv Init_3DM_SkyTable_Core
 funcv Game_Sync
 
 ; stack params
@@ -175,6 +182,30 @@ proc draw_3dscene_proc public
         Game_Call_Asm_Reg0_void draw_3dscene,-1
 
 endp ; end procedure draw_3dscene_proc
+
+proc Set_3DM_ViewDepth_proc public
+
+        Game_Call_Asm_Reg1 Set_3DM_ViewDepth,-1
+
+endp ; end procedure Set_3DM_ViewDepth_proc
+
+proc Set_3DM_ShadeTable_proc public
+
+        Game_Call_Asm_Reg1 Set_3DM_ShadeTable,-1
+
+endp ; end procedure Set_3DM_ShadeTable_proc
+
+proc Set_3DM_SquareSize_proc public
+
+        Game_Call_Asm_Reg1 Set_3DM_SquareSize,-1
+
+endp ; end procedure Set_3DM_SquareSize_proc
+
+proc Init_3DM_SkyTable_Core_proc public
+
+        Game_Call_Asm_Reg0_void Init_3DM_SkyTable_Core,-1
+
+endp ; end procedure Init_3DM_SkyTable_Core_proc
 
 proc SR_Sync public
 
