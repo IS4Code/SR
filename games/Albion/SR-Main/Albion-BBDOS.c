@@ -283,6 +283,12 @@ int32_t CCALL DOS_Close(int32_t file_handle)
     }
 
     close(DOS_file_entries[file_handle].fd);
+
+    if ((DOS_file_entries[file_handle].flags & ~1u) != DOS_OPEN_MODE_READ && !strncasecmp(DOS_filenames[file_handle], "SAVES\\", 6))
+    {
+        vfs_sync(DOS_filenames[file_handle]);
+    }
+
     DOS_file_entries[file_handle].flags = 0;
     return 1;
 }

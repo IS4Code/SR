@@ -879,4 +879,13 @@ void vfs_fetch(const char *filepath, int is_write)
     free(buf);
 }
 
+void vfs_sync(const char *filepath)
+{
+    // specific file syncing not supported
+    (void)(filepath);
+    MAIN_THREAD_EM_ASM({
+        Module.SyncQueue(resume => FS.syncfs(false, resume));
+    });
+}
+
 #endif

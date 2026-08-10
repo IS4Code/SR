@@ -2,6 +2,48 @@
 if (!Module.ENVIRONMENT_IS_PTHREAD)
 {
     Module.preRun = Module.preRun || [];
+
+    Module.preRun.push(function () {
+        var queue = [];
+        var running = false;
+
+        function onResume(err)
+        {
+            if (err)
+            {
+                console.error(err);
+            }
+            if (queue.length === 0)
+            {
+                running = false;
+                return;
+            }
+            (queue.shift())(onResume);
+        }
+
+        Module.SyncQueue = function (op) {
+            if (running)
+            {
+                queue.push(op);
+                return;
+            }
+            running = true;
+            op(onResume);
+        };
+    });
+
+    Module.preRun.push(function () {
+        FS.mkdirTree("/XLDLIBS/CURRENT");
+
+        // Persist /SAVES
+        FS.mkdirTree("/SAVES");
+        FS.mount(IDBFS, {}, "/SAVES");
+
+        var dependency = 'fs-sync';
+        addRunDependency(dependency);
+        FS.syncfs(true, err => removeRunDependency(dependency));
+    });
+
     Module.preRun.push(function () {
         var dependency = 'game-manifest';
         addRunDependency(dependency);
