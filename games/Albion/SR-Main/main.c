@@ -950,6 +950,8 @@ static int Game_Initialize(void)
     Game_MinCursorData[8] = 0xF8;
     Game_MinCursorData[9] = 0xD8;
     Game_MouseCursor = 0;
+    Game_MouseLookEnabled = 0;
+    Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;
 
     Game_FopenList = NULL;
