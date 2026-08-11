@@ -28,14 +28,25 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-engine.h"
+#include "Albion-mouse.h"
 #include "Albion-proc-events.h"
 #include "input.h"
 
 int Game_MovementEnabled(void)
 {
-    uint16_t screen_type = Game_ScreenType();
+    uint16_t screen_type = Game_RootScreenType();
     // 2D or 3D
     return (screen_type == GAME_SCREEN_MAP_2D) || (screen_type == GAME_SCREEN_MAP_3D);
+}
+
+static int Game_SwitchCtrl(void)
+{
+#if defined(__EMSCRIPTEN__)
+    // put sprint on Shift to prevent accidental Ctrl-W
+    return Game_SwitchWSAD && Game_MovementEnabled();
+#else
+    return 0;
+#endif
 }
 
 void Game_ProcessKEvents(void)
@@ -79,6 +90,8 @@ void Game_ProcessKEvents(void)
 
     static int alt_code_state = 0;
     static unsigned int alt_code_value;
+    static uint8_t alt_held = 0;
+    static uint8_t ad_held = 0;
 
     VSyncTick = Game_VSyncTick;
     finish = 0;
@@ -136,11 +149,15 @@ void Game_ProcessKEvents(void)
                         case 'a':
                             ascii_code = 0;
                             scancode = 0x4b;
+                            if (cevent->key.state == SDL_PRESSED) ad_held |= 0x1;
+                            else ad_held &= ~0x1;
                             break;
                         case 'D':
                         case 'd':
                             ascii_code = 0;
                             scancode = 0x4d;
+                            if (cevent->key.state == SDL_PRESSED) ad_held |= 0x2;
+                            else ad_held &= ~0x2;
                             break;
                         case 'S':
                         case 's':
@@ -397,21 +414,25 @@ void Game_ProcessKEvents(void)
 
                             break;
                         case SDLK_RSHIFT:
-                            scancode = 0x36;
+                            scancode = Game_SwitchCtrl() ? 0x1d : 0x36;
 
                             break;
                         case SDLK_LSHIFT:
-                            scancode = 0x2a;
+                            scancode = Game_SwitchCtrl() ? 0x1d : 0x2a;
 
                             break;
                         case SDLK_RCTRL:
+                            scancode = Game_SwitchCtrl() ? 0x36 : 0x1d;
+
+                            break;
                         case SDLK_LCTRL:
-                            scancode = 0x1d;
+                            scancode = Game_SwitchCtrl() ? 0x2a : 0x1d;
 
                             break;
                         case SDLK_RALT:
                         case SDLK_LALT:
                             scancode = 0x38;
+                            alt_held = (cevent->key.state == SDL_PRESSED) ? 1 : 0;
 
                             if (cevent->type == SDL_KEYDOWN)
                             {
@@ -469,6 +490,7 @@ void Game_ProcessKEvents(void)
                 if (Game_InterruptTable[9] != 0)
                 {
                     keyboard_keys[scancode & 0x7f] = (cevent->key.state == SDL_PRESSED)?1:0;
+                    keyboard_keys[0x38] = (alt_held || ad_held != 0)?1:0;
                 }
 
                 if (cevent->key.state == SDL_PRESSED || alt_code_state == 3)
@@ -584,6 +606,13 @@ static void Game_CompareMPosition(int x, int y, int *XPosDiff, int *YPosDiff)
     }
 }
 
+static int Game_MouseInBottomBar(int32_t device_y)
+{
+    int32_t picture_y = (Game_Device2PictureY(device_y) * Game_VideoAspectY + 32767) >> 16;
+    // bar height
+    return picture_y >= (240 - 48);
+}
+
 static void Game_WarpMouse(int x, int y)
 {
     SDL_Event event;
@@ -610,6 +639,8 @@ int Game_ProcessMEvents(void)
     VSyncTick = Game_VSyncTick;
     finish = 0;
 
+    Game_MouseLook_Update();
+
     while (!finish && Game_MQueueWrite != Game_MQueueRead)
     {
         cevent = &(Game_EventMQueue[Game_MQueueRead]);
@@ -617,6 +648,12 @@ int Game_ProcessMEvents(void)
         switch(cevent->type)
         {
             case SDL_MOUSEMOTION:
+                if (Game_MouseLook_Active())
+                {
+                    Game_MouseLook_Move(cevent->motion.xrel, cevent->motion.yrel);
+                    break;
+                }
+
                 //senquack - when in unscaled display mode, handle things a bit differently
                 //	since screen coordinates correspond directly to the game's framebuffer
                 //	coordinates, only shifted a bit
@@ -700,6 +737,23 @@ int Game_ProcessMEvents(void)
                 // case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONUP:
             case SDL_MOUSEBUTTONDOWN:
+                if (cevent->button.button == SDL_BUTTON_LEFT && Game_ScreenType() == GAME_SCREEN_MAP_3D)
+                {
+                    if (cevent->type == SDL_MOUSEBUTTONDOWN && cevent->button.clicks >= 2 &&
+                        !Game_MouseInBottomBar(cevent->button.y))
+                    {
+                        // double-click in 3D area = toggle mouse look
+                        Game_MouseLook_Toggle();
+                        break;
+                    }
+
+                    if (Game_MouseLook_Active())
+                    {
+                        // ignore clicks in mouse look
+                        break;
+                    }
+                }
+
                 if (cevent->button.button == SDL_BUTTON_LEFT ||
                     cevent->button.button == SDL_BUTTON_RIGHT)
                 {

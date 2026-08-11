@@ -24,7 +24,6 @@
 
 #include "../Game_defs.h"
 #include "../Game_vars.h"
-#include "../Albion-engine.h"
 #include "palette32bgra.h"
 #include "overlay.h"
 #include <memory.h>
@@ -72,13 +71,6 @@ static void Blit_Paletted(uint32_t *dst, const uint8_t *src, uint32_t count, con
     }
 }
 
-static int SceneVisible(int scene_type)
-{
-    uint16_t screen_type = Game_RootScreenType();
-
-    return (screen_type == scene_type) || (screen_type == GAME_SCREEN_DIALOGUE);
-}
-
 static void Flip_360x240x8_to_360x240x32_advanced(uint8_t *src, uint32_t *dst1, uint32_t *dst2, int *dst2_used)
 {
     int counter, DrawOverlay;
@@ -86,9 +78,6 @@ static void Flip_360x240x8_to_360x240x32_advanced(uint8_t *src, uint32_t *dst1, 
 
     OverlayInfo = Game_OverlayDisplay;
     DrawOverlay = Get_DrawOverlay(src, &OverlayInfo);
-
-    if (!SceneVisible(GAME_SCREEN_MAP_3D)) DrawOverlay = 0;
-
     *dst2_used = DrawOverlay;
 
     if (DrawOverlay)
@@ -377,8 +366,6 @@ static void Flip_360x240x8_to_720x480x32(uint8_t *src, uint32_t *dst)
 
     OverlayInfo = Game_OverlayDisplay;
     DrawOverlay = Get_DrawOverlay(src, &OverlayInfo);
-
-    if (!SceneVisible(GAME_SCREEN_MAP_3D)) DrawOverlay = 0;
 
     if (DrawOverlay)
     {
