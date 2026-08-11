@@ -775,6 +775,17 @@ int Game_ProcessMEvents(void)
 
                 break;
                 // case SDL_MOUSEBUTTONUP, SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEWHEEL:
+                {
+                    int32_t wheel_y = cevent->wheel.y;
+
+                    if (cevent->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) wheel_y = -wheel_y;
+
+                    Game_MouseWheel_Move(wheel_y);
+                }
+
+                break;
+                // case SDL_MOUSEWHEEL:
             default:
                 break;
         } // switch(event.type)

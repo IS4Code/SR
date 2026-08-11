@@ -58,6 +58,7 @@ void Game_ReadConfig(void)
     char buf[8192];
     char *str, *param;
     int items, num_int;
+    double num_double;
 
     // senquack - config files are now specified via command line
 //    f = fopen(config_filename, "rt");
@@ -417,6 +418,44 @@ void Game_ReadConfig(void)
                     {
                         Game_ExtraScalerThreads = num_int;
                     }
+                }
+            }
+            else if ( strcasecmp(str, "FieldOfView") == 0 ) // str equals "FieldOfView"
+            {
+                num_double = 0.0;
+                sscanf(param, "%lf", &num_double);
+                if ((num_double > 0.0) && (num_double < 180.0))
+                {
+                    Game_FieldOfViewDegrees = num_double;
+                }
+            }
+            else if ( strcasecmp(str, "PitchFovCompensation") == 0 ) // str equals "PitchFovCompensation"
+            {
+                if ( strcasecmp(param, "on") == 0 ) // param equals "on"
+                {
+                    Game_PitchFovCompensation = 1;
+                }
+                else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
+                {
+                    Game_PitchFovCompensation = 0;
+                }
+            }
+            else if ( strcasecmp(str, "TileCullNearTolerance") == 0 ) // str equals "TileCullNearTolerance"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int >= 0)
+                {
+                    Game_TileCullNearTolerancePercent = num_int;
+                }
+            }
+            else if ( strcasecmp(str, "TileCullAngleTolerance") == 0 ) // str equals "TileCullAngleTolerance"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int >= 0)
+                {
+                    Game_TileCullAngleTolerancePercent = num_int;
                 }
             }
         }

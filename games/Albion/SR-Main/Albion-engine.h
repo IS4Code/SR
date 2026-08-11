@@ -33,4 +33,6 @@
 uint16_t Game_ScreenType(void);
 uint16_t Game_RootScreenType(void);
 
+void Game_Fov_Adjust(double coef);
+
 #endif /* _ALBION_ENGINE_H_INCLUDED_ */
