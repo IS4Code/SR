@@ -170,3 +170,16 @@ void Game_MouseLook_Move(int32_t xrel, int32_t yrel)
     if (xrel) Game_MouseLook_Turn(xrel);
     if (yrel) Game_MouseLook_Pitch(yrel);
 }
+
+void Game_MouseWheel_Move(int32_t y)
+{
+    if (Game_ScreenType() == GAME_SCREEN_MAP_3D)
+    {
+        // 3D zoom
+        if (y != 0)
+        {
+            Game_Fov_Adjust(pow(1.1, (double) y));
+        }
+        return;
+    }
+}

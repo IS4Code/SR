@@ -4807,6 +4807,11 @@ static int32_t Game_RoundedScale(int32_t a, int32_t b, int32_t divisor)
     return (int32_t)(((int64_t)a * b + divisor / 2) / divisor);
 }
 
+static int32_t Game_Fov_StockFocalX(void)
+{
+    return Game_RoundedScale(256, g_viewport_width, 208);
+}
+
 #define ERR_3DM_RATIO 0xf00f // 3DM.H
 
 // seg01_code.llinc, loc_946B0 (216 bytes) through loc_9472B's ret
@@ -4814,7 +4819,7 @@ static int32_t Game_RoundedScale(int32_t a, int32_t b, int32_t divisor)
 static void Game_AspectRatioRecompute(int32_t ratio)
 {
     int32_t result1 = Game_RoundedScale(226, ratio, 100);
-    int32_t stock_focal_x = Game_RoundedScale(256, g_viewport_width, 208);
+    int32_t stock_focal_x = Game_Fov_StockFocalX();
     int32_t stock_focal_y = Game_RoundedScale(result1, g_viewport_height, 112);
 
     // apply FOV scale
@@ -4839,6 +4844,26 @@ int32_t CCALL Set_3DM_AspectRatio_Core(int32_t ratio)
     Game_AspectRatioRecompute(ratio);
 
     return 0;
+}
+
+#define GAME_FOV_MIN_DEGREES 30.0
+#define GAME_FOV_MAX_DEGREES 100.0
+
+void Game_Fov_Adjust(double coef)
+{
+    if (g_byte_13FFA8 == 0 || g_viewport_maximum_x <= 0) return;
+
+    double new_focal_x = (double) g_dword_140004 * coef;
+
+    if (new_focal_x < 1.0) new_focal_x = 1.0;
+
+    double fov = atan((double) g_viewport_maximum_x / new_focal_x) * (2.0 * 180.0 / M_PI);
+
+    if (fov < GAME_FOV_MIN_DEGREES) fov = GAME_FOV_MIN_DEGREES;
+    if (fov > GAME_FOV_MAX_DEGREES) fov = GAME_FOV_MAX_DEGREES;
+
+    Game_FieldOfViewDegrees = fov;
+    Game_AspectRatioRecompute(g_dword_140018);
 }
 
 
