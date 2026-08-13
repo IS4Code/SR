@@ -306,13 +306,48 @@ elif device == 'web':
     env['CXX'] = 'em++'
     env['LINK'] = 'em++'
     env['ENV'] = dict(os.environ)
+
+    # files downloaded at init - rest is streamed
+    data_embedded_files = ['Albion.cfg', 'ALBION.EXE', 'setup.ini']
+    data_preloaded_files = ['DRIVERS', 'XLDLIBS/PICTURE0.XLD']
+
+    embed_flags = ' '.join('--embed-file data/%s@/%s' % (f, f) for f in data_embedded_files)
+    preload_flags = ' '.join('--preload-file data/%s@/%s' % (f, f) for f in data_preloaded_files)
+
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
-               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 -lidbfs.js --preload-file data_preload/DRIVERS@/DRIVERS --preload-file data_preload/XLDLIBS/PICTURE0.XLD@/XLDLIBS/PICTURE0.XLD --embed-file data_embed@ --pre-js web_prerun.js -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0',
+               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web_prerun.js -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap"]',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
               )
+    def sync_tree(src_path, dst_path):
+        # copies updated files and removes unneeded files
+        if os.path.isdir(src_path):
+            os.makedirs(dst_path, exist_ok=True)
+            src_entries = set(os.listdir(src_path))
+            for entry in os.listdir(dst_path):
+                if entry not in src_entries:
+                    entry_path = os.path.join(dst_path, entry)
+                    if os.path.isdir(entry_path):
+                        shutil.rmtree(entry_path)
+                    else:
+                        os.remove(entry_path)
+            for entry in src_entries:
+                sync_tree(os.path.join(src_path, entry), os.path.join(dst_path, entry))
+        else:
+            if (not os.path.exists(dst_path)) or (os.path.getmtime(src_path) > os.path.getmtime(dst_path)) or (os.path.getsize(src_path) != os.path.getsize(dst_path)):
+                shutil.copy2(src_path, dst_path)
+
     if not clean:
+        resources_dir = 'resources'
+        resources_makefile = os.path.join(resources_dir, 'makefile')
+        if os.path.isfile(resources_makefile):
+            xldlibs_out_dir = os.path.abspath(os.path.join('data', 'XLDLIBS'))
+            subprocess.check_call(['make', '-C', resources_dir, 'OUT_DIR=' + xldlibs_out_dir, 'all'])
+        elif not os.path.isdir(os.path.join('data', 'XLDLIBS')):
+            print("\nWarning: data/XLDLIBS is missing and could not be regenerated. Either run 'git submodule update --init'")
+            print(" or provide the contents manually.\n")
+
         try:
             os.makedirs('publish')
         except OSError:
@@ -320,19 +355,15 @@ elif device == 'web':
 
         # files streamed at run-time
         publish_data_dir = os.path.join('publish', 'data')
-        remote_sources = [('XLDLIBS', os.path.join('data_preload', 'XLDLIBS')),
-                           ('MAIN.EXE', os.path.join('data_preload', 'MAIN.EXE'))]
+        remote_sources = [('XLDLIBS', os.path.join('data', 'XLDLIBS')),
+                           ('MAIN.EXE', os.path.join('data', 'MAIN.EXE'))]
         # embedded files
         embedded_paths = set(['XLDLIBS/PICTURE0.XLD'])
 
-        if not os.path.exists(publish_data_dir):
-            os.makedirs(publish_data_dir)
-            for rel_name, src_path in remote_sources:
-                dst_path = os.path.join(publish_data_dir, rel_name)
-                if os.path.isdir(src_path):
-                    shutil.copytree(src_path, dst_path)
-                else:
-                    shutil.copyfile(src_path, dst_path)
+        os.makedirs(publish_data_dir, exist_ok=True)
+        for rel_name, src_path in remote_sources:
+            if os.path.exists(src_path):
+                sync_tree(src_path, os.path.join(publish_data_dir, rel_name))
 
         manifest = {}
         for rel_name, _ in remote_sources:
@@ -424,6 +455,20 @@ elif device == 'pc64-windows' or device == 'pc64-linux':
 else:
     arch_objs = SConscript('arm/SConscript', exports='device env')
 
+# Albion-version recompiled every time
+sources = [f for f in Glob('*.c') if os.path.basename(str(f)) != 'Albion-version.c']
+version_obj = env.Object('Albion-version', 'Albion-version.c')
+env.AlwaysBuild(version_obj)
+version_objs = [version_obj]
 
-program = env.Program(program_name, Glob('*.c') + display_objs + audio_objs + input_objs + arch_objs + midi_objs)
-env.Depends(program, 'web_prerun.js')
+program = env.Program(program_name, sources + display_objs + audio_objs + input_objs + arch_objs + midi_objs + version_objs)
+if device == 'web':
+    env.Depends(program, 'web_prerun.js')
+    baked_deps = []
+    for rel_path in data_preloaded_files + data_embedded_files:
+        full_path = os.path.join('data', *rel_path.split('/'))
+        if os.path.isdir(full_path):
+            baked_deps += Glob(os.path.join(full_path, '*'))
+        elif os.path.isfile(full_path):
+            baked_deps.append(full_path)
+    env.Depends(program, baked_deps)
