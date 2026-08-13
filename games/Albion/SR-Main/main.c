@@ -52,6 +52,7 @@
 #include "Albion-timer.h"
 #include "Albion-music-midiplugin.h"
 #include "Albion-music-midiplugin2.h"
+#include "Albion-version.h"
 #include "Game_config.h"
 #include "Game_memory.h"
 #include "Game_scalerplugin.h"
@@ -1820,6 +1821,8 @@ int main (int argc, char *argv[])
     Game_ReadFontData();
 
     Game_Initialize2();
+
+    Game_InitBuildInfo();
 
 #if defined(__DEBUG__)
     fprintf(stderr, "Starting game event loop...\n");

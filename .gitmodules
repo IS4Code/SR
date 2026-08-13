@@ -1,0 +1,3 @@
+[submodule "games/Albion/SR-Main/resources"]
+	path = games/Albion/SR-Main/resources
+	url = https://github.com/IS4Code/Albion-resources.git
