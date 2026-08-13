@@ -767,16 +767,6 @@ int Game_ProcessMEvents(void)
 
                     ret = Game_MouseButton(0 /*SDL_GetMouseState(NULL, NULL)*/, ((cevent->button.state == SDL_PRESSED)?1:2) + ((cevent->button.button == SDL_BUTTON_LEFT)?0:2));
 
-                    if (Game_MouseCursor == 3 && cevent->type == SDL_MOUSEBUTTONDOWN)
-                    {
-                        Game_CompareMPosition(cevent->button.x, cevent->button.y, &XPosDiff, &YPosDiff);
-
-                        if (XPosDiff || YPosDiff)
-                        {
-                            Game_PositionMouse(0, cevent->button.x, cevent->button.y);
-                        }
-                    }
-
                     if ((Display_MouseLocked || Display_Fullscreen) && !ret)
                     {
                         Game_CompareMPosition(cevent->button.x, cevent->button.y, &XPosDiff, &YPosDiff);
