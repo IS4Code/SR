@@ -1,3 +1,6 @@
 [submodule "games/Albion/SR-Main/resources"]
 	path = games/Albion/SR-Main/resources
 	url = https://github.com/IS4Code/Albion-resources.git
+[submodule "midi-plugins/libADLMIDI"]
+	path = midi-plugins/libADLMIDI
+	url = https://github.com/Wohlstand/libADLMIDI.git
