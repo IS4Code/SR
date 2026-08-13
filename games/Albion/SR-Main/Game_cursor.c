@@ -3,7 +3,6 @@
 
 #include <stddef.h>
 #include <stdlib.h>
-#include <string.h>
 #include <SDL.h>
 
 #pragma pack(1)
@@ -25,6 +24,9 @@ extern Game_CursorEntry loc_137BCC[]; // cursor entries
 #define GAME_CURSOR_SCALE 2
 
 static SDL_Cursor *Game_SDL_Cursors[GAME_CURSOR_COUNT];
+static Game_CursorEntry Game_Cursor_Original[GAME_CURSOR_COUNT];
+static uint8_t Game_Cursor_EmptySprite[4 * 4];
+static int Game_Cursor_Hidden = 0;
 static int Game_Cursor_Loaded = 0;
 static int Game_Cursor_LastIndex = -1;
 
@@ -88,28 +90,45 @@ static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry)
     return cursor;
 }
 
-static void Game_Cursor_Load(void)
+void Game_Cursor_Hide(void)
 {
+    if (Game_MouseCursor != 3 || Game_Cursor_Hidden)
+    {
+        return;
+    }
+
     // replicate Empty_mouse_pointer behaviour
+    // with a new empty sprite
     Game_CursorEntry empty_cursor = {
         0, 0,
         4, 4,
-        loc_137BCC[0].sprite
+        Game_Cursor_EmptySprite
     };
-    
+
     for (int i = 0; i < GAME_CURSOR_COUNT; i++)
     {
         Game_CursorEntry *cursor = &loc_137BCC[i];
 
-        // render to SDL cursor 
-        Game_SDL_Cursors[i] = Game_Cursor_Render(cursor);
+        // preserve the original entry for later rendering
+        Game_Cursor_Original[i] = *cursor;
 
         // overwrite with empty data
         *cursor = empty_cursor;
     }
 
-    // erase pixels of the empty sprite
-    memset(empty_cursor.sprite, 0, 4 * 4);
+    Game_Cursor_Hidden = 1;
+}
+
+static void Game_Cursor_Load(void)
+{
+    // hide first just in case
+    Game_Cursor_Hide();
+
+    for (int i = 0; i < GAME_CURSOR_COUNT; i++)
+    {
+        // render to SDL cursor from the original sprite
+        Game_SDL_Cursors[i] = Game_Cursor_Render(&Game_Cursor_Original[i]);
+    }
 
     Game_Cursor_Loaded = 1;
 }

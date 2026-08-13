@@ -1832,6 +1832,8 @@ int main (int argc, char *argv[])
 
     Game_InitBuildInfo();
 
+    Game_Cursor_Hide();
+
 #if defined(__DEBUG__)
     fprintf(stderr, "Starting game event loop...\n");
 #endif
