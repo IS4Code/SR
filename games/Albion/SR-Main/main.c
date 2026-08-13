@@ -54,6 +54,7 @@
 #include "Albion-music-midiplugin2.h"
 #include "Albion-version.h"
 #include "Game_config.h"
+#include "Game_cursor.h"
 #include "Game_memory.h"
 #include "Game_scalerplugin.h"
 #include "Game_thread.h"
@@ -950,7 +951,11 @@ static int Game_Initialize(void)
     Game_MinCursorData[7] = 0x50;
     Game_MinCursorData[8] = 0xF8;
     Game_MinCursorData[9] = 0xD8;
+#if defined(__EMSCRIPTEN__)
+    Game_MouseCursor = 3; // render the game's cursor by default
+#else
     Game_MouseCursor = 0;
+#endif
     Game_MouseLookEnabled = 0;
     Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;
@@ -1404,6 +1409,9 @@ static void Game_HandleEvent(void);
 
 void Game_Iterate(void)
 {
+    // update the cursor
+    Game_Cursor_Update();
+
 #if defined(__EMSCRIPTEN__)
     // process all events piled up to the callback
     for (;;)
@@ -1823,6 +1831,8 @@ int main (int argc, char *argv[])
     Game_Initialize2();
 
     Game_InitBuildInfo();
+
+    Game_Cursor_Hide();
 
 #if defined(__DEBUG__)
     fprintf(stderr, "Starting game event loop...\n");
