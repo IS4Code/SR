@@ -85,6 +85,11 @@ loc_86527,SR_DOS_exists
 loc_866D7,SR_DOS_setcurrentdir
 loc_868B4,SR_DOS_GetSeekPosition
 
+loc_94734,Set_3DM_ViewDepth_proc
+loc_94A24,Set_3DM_ShadeTable_proc
+loc_94788,Set_3DM_SquareSize_proc
+loc_BE2E0,Init_3DM_SkyTable_Core_proc
+
 loc_915A0,SR_OPM_New
 loc_91708,SR_OPM_Del
 loc_91750,SR_OPM_SetVirtualClipStart

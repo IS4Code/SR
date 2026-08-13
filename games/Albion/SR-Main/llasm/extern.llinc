@@ -46,8 +46,15 @@ funcv Game_FloatProcSqrt8 *ValuePtr
 funcv Game_FloatProcCosSin *ValuePtr
 funcv Game_FloatProcAtan *ValuePtr
 funcv Game_FloatProcSinCos *ValuePtr
+func Set_3DM_WindowSize_Core width, height
+func Set_3DM_AspectRatio_Core ratio
+func Init_3DM_Core
 
 proc draw_3dscene_proc external
+proc Set_3DM_ViewDepth_proc external
+proc Set_3DM_ShadeTable_proc external
+proc Set_3DM_SquareSize_proc external
+proc Init_3DM_SkyTable_Core_proc external
 extern Game_UseEnhanced3DEngine
 extern Game_ScreenshotEnabled
 extern Game_ScreenshotAutomaticFilename

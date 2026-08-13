@@ -58,6 +58,7 @@ void Game_ReadConfig(void)
     char buf[8192];
     char *str, *param;
     int items, num_int;
+    double num_double;
 
     // senquack - config files are now specified via command line
 //    f = fopen(config_filename, "rt");
@@ -423,6 +424,44 @@ void Game_ReadConfig(void)
                     }
                 }
             }
+            else if ( strcasecmp(str, "FieldOfView") == 0 ) // str equals "FieldOfView"
+            {
+                num_double = 0.0;
+                sscanf(param, "%lf", &num_double);
+                if ((num_double > 0.0) && (num_double < 180.0))
+                {
+                    Game_FieldOfViewDegrees = num_double;
+                }
+            }
+            else if ( strcasecmp(str, "PitchFovCompensation") == 0 ) // str equals "PitchFovCompensation"
+            {
+                if ( strcasecmp(param, "on") == 0 ) // param equals "on"
+                {
+                    Game_PitchFovCompensation = 1;
+                }
+                else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
+                {
+                    Game_PitchFovCompensation = 0;
+                }
+            }
+            else if ( strcasecmp(str, "TileCullNearTolerance") == 0 ) // str equals "TileCullNearTolerance"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int >= 0)
+                {
+                    Game_TileCullNearTolerancePercent = num_int;
+                }
+            }
+            else if ( strcasecmp(str, "TileCullAngleTolerance") == 0 ) // str equals "TileCullAngleTolerance"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int >= 0)
+                {
+                    Game_TileCullAngleTolerancePercent = num_int;
+                }
+            }
         }
         else if ( strncasecmp(str, "Screenshot_", 11) == 0 ) // str begins with "Screenshot_"
         {
@@ -515,6 +554,33 @@ void Game_ReadConfig(void)
                 else if ( strcasecmp(param, "ArrowKeys") == 0 ) // param equals "ArrowKeys"
                 {
                     Game_SwitchArrowKeys = 0;
+                }
+            }
+        }
+        else if ( strncasecmp(str, "Mouse_", 6) == 0 ) // str begins with "Mouse_"
+        {
+            // mouse settings
+
+            str += 6;
+
+            if ( strcasecmp(str, "Look") == 0 ) // str equals "Look"
+            {
+                if ( strcasecmp(param, "yes") == 0 ) // param equals "yes"
+                {
+                    Game_MouseLookEnabled = 1;
+                }
+                else if ( strcasecmp(param, "no") == 0 ) // param equals "no"
+                {
+                    Game_MouseLookEnabled = 0;
+                }
+            }
+            else if ( strcasecmp(str, "LookSensitivity") == 0 ) // str equals "Sensitivity"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int > 0)
+                {
+                    Game_MouseLookSensitivity = num_int;
                 }
             }
         }

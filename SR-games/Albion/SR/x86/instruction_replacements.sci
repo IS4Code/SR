@@ -96,6 +96,12 @@ loc_C5EBB,4,add esp, 4 ; fix esp instead of sp (probably mistake ???)
 loc_94C79,6,mov [loc_13FFB0], esi|cmp dword [Game_UseEnhanced3DEngine], 0|jz _NonEnhanced3DEngine|call draw_3dscene_proc|jmp _After3DEngine|_NonEnhanced3DEngine: ; call enhanced 3d engine
 loc_94C84,5,_After3DEngine:|mov eax, [loc_14A4DA] ; label after 3d engine
 
+loc_948C0,396,push ebx|mov ebx, esp|sub esp, byte 16|and esp, 0FFFFFFF0h|mov [esp+8], ebx|mov [esp], eax|mov [esp+4], edx|call Set_3DM_WindowSize_Core|mov esp, [esp+8]|test eax, eax|pop ebx|jnz loc_948C0_error|call Init_3DM_SkyTable_Core_proc|jmp loc_B492C|loc_948C0_error: retn ; Set_3DM_WindowSize prefix, tail via jmp
+
+loc_943B0,695,push ebx|push ecx|push edx|push esi|push edi|push ebp|movzx eax, byte [loc_13FFA8]|test eax, eax|jnz loc_943B0_already|mov eax, esp|sub esp, byte 16|and esp, 0FFFFFFF0h|mov [esp], eax|call Init_3DM_Core|mov ecx, eax|mov esp, [esp]|mov eax, ecx|test eax, eax|jnz loc_943B0_epilogue|jmp loc_94667|loc_943B0_already: xor eax, eax|loc_943B0_epilogue: pop ebp|pop edi|pop esi|pop edx|pop ecx|pop ebx|retn ; Init_3DM prefix, tail via jmp
+
+loc_946B0,392,push ecx|mov ecx, esp|sub esp, byte 16|and esp, 0FFFFFFF0h|mov [esp+4], ecx|mov [esp], eax|call Set_3DM_AspectRatio_Core|mov esp, [esp+4]|test eax, eax|pop ecx|jnz loc_946B0_error|jmp loc_BFA94|loc_946B0_error: retn ; Set_3DM_AspectRatio prefix, tail via jmp
+
 loc_7C738,2,mov ebp, esp|cmp ebx, 99|jbe loc_7C73A|cmp ebx, 255|ja loc_7C73A|mov ebx, 99|loc_7C73A: ; limit number of items to 99
 
 loc_C0BA5,5,and eax, 0xff|jz short loc_C0BC7 ; fix bug in original code

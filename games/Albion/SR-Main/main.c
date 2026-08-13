@@ -52,6 +52,7 @@
 #include "Albion-timer.h"
 #include "Albion-music-midiplugin.h"
 #include "Albion-music-midiplugin2.h"
+#include "Albion-version.h"
 #include "Game_config.h"
 #include "Game_cursor.h"
 #include "Game_memory.h"
@@ -955,6 +956,8 @@ static int Game_Initialize(void)
 #else
     Game_MouseCursor = 0;
 #endif
+    Game_MouseLookEnabled = 0;
+    Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;
 
     Game_FopenList = NULL;
@@ -1009,6 +1012,11 @@ static int Game_Initialize(void)
     Game_AdvancedScaler = 1;
     Game_ScaleFactor = 0;
     Game_ExtraScalerThreads = -1;
+
+    Game_FieldOfViewDegrees = 44.22;
+    Game_PitchFovCompensation = 0;
+    Game_TileCullNearTolerancePercent = 0;
+    Game_TileCullAngleTolerancePercent = 0;
 
     Game_Window = NULL;
     Game_Renderer = NULL;
@@ -1821,6 +1829,8 @@ int main (int argc, char *argv[])
     Game_ReadFontData();
 
     Game_Initialize2();
+
+    Game_InitBuildInfo();
 
 #if defined(__DEBUG__)
     fprintf(stderr, "Starting game event loop...\n");

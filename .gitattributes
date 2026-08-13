@@ -7,6 +7,7 @@
 **/arm-support/*.inc linguist-language=Unix-Assembly
 **/x86-support/*.inc linguist-language=Assembly
 **/x64-support/*.inc linguist-language=Assembly
+**/global_aliases.sci merge=union
 midi-plugins/xcom12/src/dosbox_opl/** linguist-vendored
 midi-plugins/xcom12/src/munt-2.7.0/** linguist-vendored
 midi-plugins/xcom12/src/nuked_opl3/** linguist-vendored

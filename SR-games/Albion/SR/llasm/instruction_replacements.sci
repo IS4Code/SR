@@ -82,7 +82,7 @@ loc_BF3C7,3,;cmp eax, 1024|cmovult eax, 1024, tmpcnd, 0, 1|;jb loc_BF411|ctcallz
 
 loc_4D505,4,;or eax, eax|;je loc_4D509|;mov [eax+0x28], dx|ifnz eax|add tmpadr, eax, 40|store16 edx, tmpadr, 1|endif|tcall loc_4D509|endp ; fix reading from NULL pointer
 
-loc_3664B,3,;or edx, edx|;je loc_3664E|;mov al, [edx+0x1]|;loc_3664E:|ifnz edx|add tmpadr, edx, 1|store8 eax, tmpadr, 1|endif ; fix reading from NULL pointer
+loc_3664B,3,;or edx, edx|;je loc_3664E|;mov al, [edx+0x1]|;loc_3664E:|ifnz edx|add tmpadr, edx, 1|load8z eax, tmpadr, 1|endif ; fix reading from NULL pointer
 
 loc_548D4,3,;or eax, eax|;je loc_548D7|;mov al, [eax+0x5]|;loc_548D7:|ifnz eax|add tmpadr, eax, 5|load8z eax, tmpadr, 1|endif ; fix reading from NULL pointer
 loc_5491D,3,;or eax, eax|;je loc_54912|ctcallz eax, loc_54912|tcall loc_54920|endp|proc loc_54920|;add eax, 0x6|add eax, eax, 6 ; fix reading from NULL pointer
@@ -93,6 +93,12 @@ loc_C5EBB,4,;add esp, 4|add esp, esp, 4 ; fix esp instead of sp (probably mistak
 
 loc_94C79,6,;mov [loc_13FFB0], esi|store esi, loc_13FFB0, 4|;cmp dword [Game_UseEnhanced3DEngine], 0|load tmp1, Game_UseEnhanced3DEngine, 4|;jz _NonEnhanced3DEngine|ctcallz tmp1, loc_94C7F|tcall loc_94C79_1|endp|proc loc_94C79_1|;call draw_3dscene_proc|;jmp _After3DEngine|PUSH loc_94C84|tcall draw_3dscene_proc|endp|;_NonEnhanced3DEngine:|proc loc_94C7F ; call enhanced 3d engine
 loc_94C84,5,;_After3DEngine:|;mov eax, [loc_14A4DA]|load eax, loc_14A4DA, 2 ; label after 3d engine
+
+loc_948C0,396,call Set_3DM_WindowSize_Core eax, edx|mov eax, tmp0|mov tmpcnd, eax|ctcallz tmpcnd, loc_948C0_success|tcall loc_948C0_error|endp|proc loc_948C0_error|POP tmp1|tcall tmp1|endp|proc loc_948C0_success|PUSH loc_948C0_cont1|tcall Init_3DM_SkyTable_Core_proc|endp|proc loc_948C0_cont1|PUSH loc_948C0_cont2|tcall loc_B492C|endp|proc loc_948C0_cont2|xor eax, eax, eax|POP tmp1|tcall tmp1|endp ; Set_3DM_WindowSize prefix, tail via tcall
+
+loc_943B0,695,PUSH ebx|PUSH ecx|PUSH edx|PUSH esi|PUSH edi|PUSH ebp|load8z tmp1, loc_13FFA8, 4|and tmpcnd, tmp1, 0xff|ctcallnz tmpcnd, loc_943B0_already|tcall loc_943B0_body|endp|proc loc_943B0_already|xor eax, eax, eax|tcall loc_943B0_epilogue|endp|proc loc_943B0_epilogue|POP ebp|POP edi|POP esi|POP edx|POP ecx|POP ebx|POP tmp1|tcall tmp1|endp|proc loc_943B0_body|call Init_3DM_Core|mov eax, tmp0|mov tmpcnd, eax|ctcallnz tmpcnd, loc_943B0_epilogue|tcall loc_94667|endp|proc loc_94667 ; Init_3DM prefix, tail via tcall
+
+loc_946B0,392,call Set_3DM_AspectRatio_Core eax|mov eax, tmp0|mov tmpcnd, eax|ctcallz tmpcnd, loc_946B0_success|tcall loc_946B0_error|endp|proc loc_946B0_error|POP tmp1|tcall tmp1|endp|proc loc_946B0_success|PUSH loc_946B0_cont1|tcall loc_BFA94|endp|proc loc_946B0_cont1|xor eax, eax, eax|POP tmp1|tcall tmp1|endp ; Set_3DM_AspectRatio prefix, tail via tcall
 
 loc_7C738,2,;mov ebp, esp|mov ebp, esp|;cmp ebx, 99|cmovugt ebx, 99, tmpcnd, 1, 0|;jbe loc_7C73A|;cmp ebx, 255|cmovugt ebx, 255, tmpcnd, 0, tmpcnd|;ja loc_7C73A|ifnz tmpcnd|;mov ebx, 99|mov ebx, 99|endif|;loc_7C73A: ; limit number of items to 99
 
