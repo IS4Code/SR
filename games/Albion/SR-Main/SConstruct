@@ -21,6 +21,7 @@
 #
 
 import os
+import sys
 import subprocess
 import shutil
 import json
@@ -309,7 +310,7 @@ elif device == 'web':
 
     # files downloaded at init - rest is streamed
     data_embedded_files = ['Albion.cfg', 'ALBION.EXE', 'setup.ini']
-    data_preloaded_files = ['DRIVERS', 'XLDLIBS/PICTURE0.XLD']
+    data_preloaded_files = ['XLDLIBS/PICTURE0.XLD']
 
     embed_flags = ' '.join('--embed-file data/%s@/%s' % (f, f) for f in data_embedded_files)
     preload_flags = ' '.join('--preload-file data/%s@/%s' % (f, f) for f in data_preloaded_files)
@@ -356,7 +357,8 @@ elif device == 'web':
         # files streamed at run-time
         publish_data_dir = os.path.join('publish', 'data')
         remote_sources = [('XLDLIBS', os.path.join('data', 'XLDLIBS')),
-                           ('MAIN.EXE', os.path.join('data', 'MAIN.EXE'))]
+                           ('MAIN.EXE', os.path.join('data', 'MAIN.EXE')),
+                           ('DRIVERS', os.path.join('data', 'DRIVERS'))]
         # embedded files
         embedded_paths = set(['XLDLIBS/PICTURE0.XLD'])
 
@@ -444,7 +446,65 @@ if device == 'web':
     ]
     for s in adl_sources:
         midi_objs.append(adl_env.Object('midi_build/' + os.path.splitext(os.path.basename(s))[0], adl_dir + '/' + s))
-    midi_objs.append(adl_env.Object('midi_build/midi-adlmidi', mp_dir + '/midi-adlmidi.c'))
+    midi_objs.append(adl_env.Object('midi_build/midi-adlmidi', mp_dir + '/midi-adlmidi.c',
+                                     CPPDEFINES = adl_env['CPPDEFINES'] + ['initialize_midi_plugin=initialize_midi_plugin_adlmidi']))
+
+    # cmake FluidSynth
+    fs_src_dir = os.path.abspath(mp_dir + '/fluidsynth')
+    fs_build_dir = os.path.abspath('midi_build/fluidsynth-build')
+    fs_lib_path = os.path.join(fs_build_dir, 'src', 'libfluidsynth.a')
+    if not clean:
+        if os.path.isfile(os.path.join(fs_src_dir, 'CMakeLists.txt')):
+            # ensure nested submodules are present
+            for fs_nested_submodule in ('gcem', 'signalsmith-audio-basics'):
+                if not os.path.isfile(os.path.join(fs_src_dir, fs_nested_submodule, 'CMakeLists.txt')):
+                    try:
+                        subprocess.check_call(['git', '-C', fs_src_dir, 'submodule', 'update', '--init', fs_nested_submodule])
+                    except (subprocess.CalledProcessError, OSError) as e:
+                        print("\nWarning: could not get midi-plugins/fluidsynth/%s (%s) via git.\n" % (fs_nested_submodule, e))
+
+            emcmake_path = shutil.which('emcmake')
+            emmake_path = shutil.which('emmake')
+            if (emcmake_path is None) or (emmake_path is None):
+                print("\nWarning: emcmake/emmake not found - cannot build FluidSynth.\n")
+            else:
+                # use the same interpreter
+                fs_env_vars = dict(os.environ)
+                fs_env_vars['PYTHON'] = sys.executable
+                if not os.path.isfile(os.path.join(fs_build_dir, 'CMakeCache.txt')):
+                    # configure once
+                    fs_compile_flags = '-m32 -pthread -sUSE_PTHREADS=1'
+                    subprocess.check_call([emcmake_path, 'cmake',
+                        '-S', fs_src_dir, '-B', fs_build_dir,
+                        '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_SHARED_LIBS=OFF',
+                        # Emscripten's toolchain sets CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY by
+                        # default (cross-compiling convention: only look inside the target
+                        # sysroot) - which made find_path() reject FluidSynth's own in-tree
+                        # gcem/include entirely, even with the submodule properly checked out,
+                        # silently falling back to the network download every time regardless.
+                        # BOTH restores normal "also look in the given/project paths" behavior.
+                        '-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH',
+                        '-DCMAKE_C_FLAGS=' + fs_compile_flags, '-DCMAKE_CXX_FLAGS=' + fs_compile_flags,
+                        '-Denable-floats=ON', '-Denable-signalsmith=ON',
+                        '-Denable-alsa=OFF', '-Denable-aufile=OFF', '-Denable-dbus=OFF', '-Denable-ipv6=OFF',
+                        '-Denable-jack=OFF', '-Denable-ladspa=OFF', '-Denable-libsndfile=OFF',
+                        '-Denable-midishare=OFF', '-Denable-opensles=OFF', '-Denable-oboe=OFF',
+                        '-Denable-network=OFF', '-Denable-oss=OFF', '-Denable-dsound=OFF',
+                        '-Denable-wasapi=OFF', '-Denable-waveout=OFF', '-Denable-winmidi=OFF',
+                        '-Denable-sdl3=OFF', '-Denable-pulseaudio=OFF', '-Denable-pipewire=OFF',
+                        '-Denable-readline=OFF', '-Denable-threads=OFF', '-Denable-openmp=OFF',
+                        '-Denable-native-dls=OFF', '-Denable-portaudio=OFF'], env=fs_env_vars)
+                # make the lib
+                subprocess.check_call([emmake_path, 'make', '-C', fs_build_dir, '-j4', 'libfluidsynth'], env=fs_env_vars)
+        elif not os.path.isfile(fs_lib_path):
+            print("\nWarning: midi-plugins/fluidsynth could not be built from sources.\n")
+
+    if os.path.isfile(fs_lib_path):
+        fs_env = env.Clone()
+        fs_env.Append(CPPPATH = [fs_build_dir + '/include', fs_src_dir + '/include', mp_dir])
+        midi_objs.append(fs_env.Object('midi_build/midi-fluidsynth', mp_dir + '/midi-fluidsynth.c',
+                                        CPPDEFINES = ['initialize_midi_plugin=initialize_midi_plugin_fluidsynth']))
+        env.Append(LIBS = ['fluidsynth'], LIBPATH = [fs_build_dir + '/src'])
 
 if llasm_version:
     arch_objs = SConscript('llasm/SConscript', exports='env')
@@ -464,6 +524,8 @@ version_objs = [version_obj]
 program = env.Program(program_name, sources + display_objs + audio_objs + input_objs + arch_objs + midi_objs + version_objs)
 if device == 'web':
     env.Depends(program, 'web_prerun.js')
+    if os.path.isfile(fs_lib_path):
+        env.Depends(program, fs_lib_path)
     baked_deps = []
     for rel_path in data_preloaded_files + data_embedded_files:
         full_path = os.path.join('data', *rel_path.split('/'))

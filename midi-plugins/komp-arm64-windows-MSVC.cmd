@@ -28,6 +28,8 @@ cl /nologo /c /O2 /W3 /MD %SPEEXDSP_COMPILE% midi-wildmidi.c /I.\include /D_CRT_
 link /NOLOGO /DLL /OUT:midi-wildmidi.dll midi-wildmidi.obj /DEF:midi.def /MACHINE:ARM64 libWildMidi.lib %SPEEXDSP_LINK% /LIBPATH:.\lib\arm64
 cl /nologo /c /O2 /W3 /MD midi-bassmidi.c /I.\include
 link /NOLOGO /DLL /OUT:midi-bassmidi.dll midi-bassmidi.obj /DEF:midi.def /MACHINE:ARM64 bassmidi.lib bass.lib /LIBPATH:.\lib\arm64
+cl /nologo /c /O2 /W3 /MD midi-fluidsynth.c /I.\include
+link /NOLOGO /DLL /OUT:midi-fluidsynth.dll midi-fluidsynth.obj /DEF:midi.def /MACHINE:ARM64 fluidsynth.lib /LIBPATH:.\lib\arm64
 cl /nologo /c /O2 /W3 /MD %SPEEXDSP_COMPILE% midi-adlmidi.c /I.\include
 link /NOLOGO /DLL /OUT:midi-adlmidi.dll midi-adlmidi.obj /DEF:midi.def /MACHINE:ARM64 ADLMIDI.lib %SPEEXDSP_LINK% /LIBPATH:.\lib\arm64
 cl /nologo /c /O2 /W3 /MD midi2-windows.c

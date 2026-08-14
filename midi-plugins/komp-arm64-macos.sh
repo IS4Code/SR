@@ -25,6 +25,7 @@ fi
 
 cc -bundle -o midi-wildmidi.so -fpic -fvisibility=hidden -arch arm64 -O2 -Wall $SPEEXDSP_COMPILE midi-wildmidi.c -I`pwd`/include -lWildMidi $SPEEXDSP_LINK -L`pwd`/lib/arm64
 cc -bundle -o midi-bassmidi.so -fpic -fvisibility=hidden -arch arm64 -O2 -Wall midi-bassmidi.c -I`pwd`/include -lbassmidi -lbass -L`pwd`/lib/arm64
+cc -bundle -o midi-fluidsynth.so -fpic -fvisibility=hidden -arch arm64 -O2 -Wall midi-fluidsynth.c -I`pwd`/include -lfluidsynth -L`pwd`/lib/arm64
 cc -bundle -o midi-adlmidi.so -fpic -fvisibility=hidden -arch arm64 -O2 -Wall $SPEEXDSP_COMPILE midi-adlmidi.c -I`pwd`/include -lADLMIDI $SPEEXDSP_LINK -L`pwd`/lib/arm64
 cc -bundle -o midi2-coremidi.so -fpic -fvisibility=hidden -arch arm64 -O2 -Wall midi2-coremidi.c -lpthread -framework CoreMIDI -framework CoreFoundation
 

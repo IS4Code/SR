@@ -191,6 +191,10 @@ void Game_ReadConfig(void)
                 {
                     Game_MidiSubsystem = 3;
                 }
+                else if ( strcasecmp(param, "fluidsynth") == 0 ) // param equals "fluidsynth"
+                {
+                    Game_MidiSubsystem = 4;
+                }
                 else if ( strcasecmp(param, "nativewindows") == 0 ) // param equals "nativewindows"
                 {
                     Game_MidiSubsystem = 11;
