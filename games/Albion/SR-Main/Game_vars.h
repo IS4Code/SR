@@ -145,6 +145,7 @@ EXTERNAL_VARIABLE int Game_MidiSubsystem;			/* MIDI subsystem
                                                        1: WildMidi
                                                        2: BASSMIDI
                                                        3: ADLMIDI
+                                                       4: FluidSynth
                                                        11: native Windows
                                                        12: ALSA
                                                        13: CoreMIDI

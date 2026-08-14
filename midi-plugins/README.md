@@ -14,6 +14,8 @@ To compile the plugins with SpeexDSP support either run the compilation script w
 
 **midi-bassmidi** plays General MIDI music using [BASSMIDI](https://www.un4seen.com/bass.html "BASS audio library") library. BASSMIDI uses a soundfont (\*.sf2) to play MIDI music.
 
+**midi-fluidsynth** plays General MIDI music using [FluidSynth](https://www.fluidsynth.org/ "A SoundFont Synthesizer") library. FluidSynth uses a soundfont (\*.sf2) to play MIDI music.
+
 **midi-adlmidi** plays General MIDI music using [libADLMIDI](https://github.com/Wohlstand/libADLMIDI/ "A Software MIDI Synthesizer library with OPL3 (YMF262) emulator") library. libADLMIDI uses an OPL3 emulator to play MIDI music.
 
 **midi2-windows** plays General MIDI and MT-32 music using [Windows API](https://learn.microsoft.com/en-us/windows/win32/multimedia/midi-reference "MIDI Reference") or the new [Windows MIDI Services](https://microsoft.github.io/MIDI/ "Windows MIDI Services") (if the SDK is installed). Windows API and Windows MIDI Services can use hardware or software synth. The default software synth doesn't require additional files to play MIDI music. Plugin can also play General MIDI music on MT-32 synth.

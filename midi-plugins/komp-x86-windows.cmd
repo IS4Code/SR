@@ -26,6 +26,7 @@ IF NOT "%LOCAL_USE_SPEEXDSP%" == "" (
 
 gcc -s -shared -static-libgcc -o midi-wildmidi.dll -m32 -O2 -Wall %SPEEXDSP_COMPILE% midi-wildmidi.c midi.def -I./include -lWildMidi %SPEEXDSP_LINK% -L./lib/x86
 gcc -s -shared -o midi-bassmidi.dll -m32 -O2 -Wall midi-bassmidi.c midi.def -I./include -lbassmidi -lbass -L./lib/x86
+gcc -s -shared -o midi-fluidsynth.dll -m32 -O2 -Wall midi-fluidsynth.c midi.def -I./include -lfluidsynth -L./lib/x86
 gcc -s -shared -static-libgcc -o midi-adlmidi.dll -m32 -O2 -Wall %SPEEXDSP_COMPILE% midi-adlmidi.c midi.def -I./include -lADLMIDI %SPEEXDSP_LINK% -L./lib/x86
 gcc -s -shared -static-libgcc -o midi2-windows.dll -m32 -O2 -Wall midi2-windows.c midi2.def -lwinmm
 
