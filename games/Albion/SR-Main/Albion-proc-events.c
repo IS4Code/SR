@@ -33,9 +33,7 @@
 
 int Game_MovementEnabled(void)
 {
-    uint16_t screen_type = Game_RootScreenType();
-    // 2D or 3D
-    return (screen_type == GAME_SCREEN_MAP_2D) || (screen_type == GAME_SCREEN_MAP_3D);
+    return !Game_InEnteringText && !Game_InMenuOptions;
 }
 
 void Game_ProcessKEvents(void)

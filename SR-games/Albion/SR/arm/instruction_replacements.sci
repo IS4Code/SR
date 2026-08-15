@@ -86,7 +86,7 @@ loc_BF442,3,@cmp eax, 1024|cmp eax, #1024|@jb loc_BF481|blo loc_BF481|@test byte
 
 loc_BF3C7,3,@cmp eax, 1024|cmp eax, #1024|@jb loc_BF411|blo loc_BF411|@test byte [eax], 60h|ldrb tmp1, [eax]| andS tmp1, tmp1, #0x60 @ fix reading from NULL pointer ('test byte [eax], 60h' must set flags for 'jz')
 
-loc_4D505,4,@or eax, eax|@je loc_4D509|@mov [eax+0x28], dx|cmp eax, #0|strneh edx, [eax, #40] @ fix reading from NULL pointer
+loc_4D505,4,@or eax, eax|@je loc_4D509|@mov [eax+0x28], dx|cmp eax, #0|strneh edx, [eax, #40] @ fix writing to NULL pointer
 
 loc_3664B,3,@or edx, edx|cmp edx, #0|@je loc_3664E|@mov al, [edx+0x1]|ldrneb eax, [edx, #1]|@loc_3664E: @ fix reading from NULL pointer
 
@@ -133,6 +133,12 @@ loc_25615,2,loc_25615_skip:|@xor eax, eax|mov eax, #0 @ skip getting filename fo
 loc_33A02,6,@call SR_SMK_ShowMenu|ADR tmp1, loc_33A02_after_call|stmfd esp!, {tmp1}|b SR_SMK_ShowMenu|LTORG_CALL|loc_33A02_after_call: @ play intro video on start in game
 loc_33EB5,18,@call SR_SMK_PlayIntro|ADR tmp1, loc_33EB5_after_call|stmfd esp!, {tmp1}|b SR_SMK_PlayIntro|LTORG_CALL|loc_33EB5_after_call: @ play intro video in game
 loc_33F10,18,@call SR_SMK_PlayCredits|ADR tmp1, loc_33F10_after_call|stmfd esp!, {tmp1}|b SR_SMK_PlayCredits|LTORG_CALL|loc_33F10_after_call: @ play credits video in game
+
+loc_7BDBB,2,@mov ebp, esp|mov ebp, esp|@mov dword [Game_InEnteringText], 1|LDR tmpadr, =Game_InEnteringText|mov tmp1, #1|str tmp1, [tmpadr] @ entering text window - begin
+loc_7C0BE,2,@mov dword [Game_InEnteringText], 0|LDR tmpadr, =Game_InEnteringText|mov tmp1, #0|str tmp1, [tmpadr]|@mov esp, ebp|mov esp, ebp @ entering text window - end
+
+loc_33DE8,2,@mov ebp, esp|mov ebp, esp|@mov dword [Game_InMenuOptions], 1|LDR tmpadr, =Game_InMenuOptions|mov tmp1, #1|str tmp1, [tmpadr] @ menu options window - begin
+loc_33E6C,2,@mov dword [Game_InMenuOptions], 0|LDR tmpadr, =Game_InMenuOptions|mov tmp1, #0|str tmp1, [tmpadr]|@mov esp, ebp|mov esp, ebp @ menu options window - end
 
 loc_8151C,2454, @ AIL code 1
 loc_81EB2,183, @ CLIB code 1

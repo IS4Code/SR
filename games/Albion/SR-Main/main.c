@@ -947,6 +947,9 @@ static int Game_Initialize(void)
     Game_MouseCursor = 0;
     Game_PlayIntro = 1;
 
+    Game_InEnteringText = 0;
+    Game_InMenuOptions = 0;
+
     Game_FopenList = NULL;
 
     Game_Sound = 0; // sound and music must be disabled here, but must be set to the default value at the end of the function
@@ -1072,14 +1075,14 @@ static int Game_Initialize(void)
 
     if (Game_UseEnhanced3DEngineNewValue)
     {
-        Game_ScreenViewpartOverlay[0] = (uint8_t *) x86_malloc(800*384*2);
+        Game_ScreenViewpartOverlay[0] = (uint8_t *) x86_malloc(720*384*2);
         if (Game_ScreenViewpartOverlay[0] == NULL)
         {
             fprintf(stderr, "Error: Not enough memory\n");
             Game_Cleanup();
             return -4;
         }
-        Game_ScreenViewpartOverlay[1] = Game_ScreenViewpartOverlay[0] + 800 * 384;
+        Game_ScreenViewpartOverlay[1] = Game_ScreenViewpartOverlay[0] + 720 * 384;
 
         Game_ScreenViewpartOriginal[0] = (uint8_t *) malloc(360*192*2);
         if (Game_ScreenViewpartOriginal[0] == NULL)

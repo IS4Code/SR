@@ -82,7 +82,7 @@ loc_BF442,3,cmp eax, 1024|jb loc_BF481|test byte [eax], 60h ; fix reading from N
 
 loc_BF3C7,3,cmp eax, 1024|jb loc_BF411|test byte [eax], 60h ; fix reading from NULL pointer ('test byte [eax], 60h' must set flags for 'jz')
 
-loc_4D505,4,or eax, eax|je loc_4D509|mov [eax+0x28], dx ; fix reading from NULL pointer
+loc_4D505,4,or eax, eax|je loc_4D509|mov [eax+0x28], dx ; fix writing to NULL pointer
 
 loc_3664B,3,or edx, edx|je loc_3664E|mov al, [edx+0x1]|loc_3664E: ; fix reading from NULL pointer
 
@@ -131,6 +131,12 @@ loc_25615,2,loc_25615_skip:|xor eax, eax ; skip getting filename for screenshot
 loc_33A02,6,;call SR_SMK_ShowMenu|CALL SR_SMK_ShowMenu ; play intro video on start in game
 loc_33EB5,18,;call SR_SMK_PlayIntro|CALL SR_SMK_PlayIntro ; play intro video in game
 loc_33F10,18,;call SR_SMK_PlayCredits|CALL SR_SMK_PlayCredits ; play credits video in game
+
+loc_7BDBB,2,;mov ebp, esp|mov ebp, r11d|mov dword [Game_InEnteringText], 1 ; entering text window - begin
+loc_7C0BE,2,mov dword [Game_InEnteringText], 0|;mov esp, ebp|mov r11d, ebp ; entering text window - end
+
+loc_33DE8,2,;mov ebp, esp|mov ebp, r11d|mov dword [Game_InMenuOptions], 1 ; menu options window - begin
+loc_33E6C,2,mov dword [Game_InMenuOptions], 0|;mov esp, ebp|mov r11d, ebp ; menu options window - end
 
 loc_8151C,2454, ; AIL code 1
 loc_81EB2,183, ; CLIB code 1
