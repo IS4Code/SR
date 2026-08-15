@@ -69,10 +69,13 @@ EXTERNAL_VARIABLE uint8_t Game_MinCursorData[10];	/* minimal cursor data */
 EXTERNAL_VARIABLE int Game_MouseCursor;				/* mouse cursor type in window
                                                        0: normal
                                                        1: minimal
-                                                       2: none */
+                                                       2: none
+                                                       3: game */
 EXTERNAL_VARIABLE int Game_PlayIntro;				/* play intro on start ? */
 EXTERNAL_VARIABLE int Game_SwitchWSAD;				/* switch WSAD keys for arrow keys ? */
 EXTERNAL_VARIABLE int Game_SwitchArrowKeys;			/* switch arrow keys for WSAD keys ? */
+EXTERNAL_VARIABLE int Game_MouseLookEnabled;		/* enable mouse look ? */
+EXTERNAL_VARIABLE int Game_MouseLookSensitivity;	/* enable mouselook sensitivity */
 
 EXTERNAL_VARIABLE void *Game_FopenList;				/* list of files opened using Game_fopen */
 
@@ -103,6 +106,11 @@ EXTERNAL_VARIABLE uint32_t Game_AdvancedScaler;		/* advanced scaler: 0 = none, 1
 EXTERNAL_VARIABLE int Game_ScaleFactor;				/* factor for advanced scaler: 0 = max */
 EXTERNAL_VARIABLE int Game_ExtraScalerThreads;		/* number of extra threads for advanced scaler: -1 = auto */
 EXTERNAL_VARIABLE Game_Advanced_Flip_Procedure Display_Advanced_Flip_Procedure;	/* advanced flip procedure */
+
+EXTERNAL_VARIABLE double Game_FieldOfViewDegrees;				/* full horizontal 3D field of view, in degrees */
+EXTERNAL_VARIABLE uint32_t Game_PitchFovCompensation;			/* widen FOV based on camera pitch */
+EXTERNAL_VARIABLE int32_t Game_TileCullNearTolerancePercent;	/* draw_floor_and_ceiling near-clip pre-test tolerance */
+EXTERNAL_VARIABLE int32_t Game_TileCullAngleTolerancePercent;	/* draw_floor_and_ceiling xvis pre-test tolerance */
 
 EXTERNAL_VARIABLE SDL_Window *Game_Window;
 EXTERNAL_VARIABLE SDL_Renderer *Game_Renderer;
@@ -137,6 +145,7 @@ EXTERNAL_VARIABLE int Game_MidiSubsystem;			/* MIDI subsystem
                                                        1: WildMidi
                                                        2: BASSMIDI
                                                        3: ADLMIDI
+                                                       4: FluidSynth
                                                        11: native Windows
                                                        12: ALSA
                                                        13: CoreMIDI

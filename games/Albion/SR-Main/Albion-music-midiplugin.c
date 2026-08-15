@@ -36,6 +36,9 @@
 #include "Game_memory.h"
 #include "xmi2mid.h"
 #include "midi-plugins.h"
+#if defined(__EMSCRIPTEN__)
+#include "virtualfs.h"
+#endif
 
 #if ( \
     defined(__aarch64__) || \
@@ -694,17 +697,19 @@ int MidiPlugin_Startup(void)
 #if defined(__EMSCRIPTEN__)
     // use embedded ADLMIDI directly
     #define free_library(handle) ((void)(handle))
-    extern int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions);
+    extern int MIDI_PLUGIN_API initialize_midi_plugin_adlmidi(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions);
+    extern int MIDI_PLUGIN_API initialize_midi_plugin_fluidsynth(unsigned short int rate, midi_plugin_parameters const *parameters, midi_plugin_functions *functions);
 
-    if (Game_MidiSubsystem != 3) // only ADLMIDI is supported
+    if (Game_MidiSubsystem == 3) MP_initialize = initialize_midi_plugin_adlmidi;
+    else if (Game_MidiSubsystem == 4) MP_initialize = initialize_midi_plugin_fluidsynth;
+    else
     {
-        fprintf(stderr, "%s: %s\n", "midi", "only the adlmidi plugin is available in this build");
+        fprintf(stderr, "%s: %s\n", "midi", "only the adlmidi and fluidsynth plugins are available in this build");
         return 1;
     }
 
     (void)plugin_name;
     MP_handle = (void *)1; // dummy non-NULL, not a real library handle
-    MP_initialize = initialize_midi_plugin;
 #else
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
     #define free_library FreeLibrary
@@ -713,6 +718,7 @@ int MidiPlugin_Startup(void)
     if (Game_MidiSubsystem == 1) plugin_name = ".\\midi-wildmidi.dll";
     else if (Game_MidiSubsystem == 2) plugin_name = ".\\midi-bassmidi.dll";
     else if (Game_MidiSubsystem == 3) plugin_name = ".\\midi-adlmidi.dll";
+    else if (Game_MidiSubsystem == 4) plugin_name = ".\\midi-fluidsynth.dll";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "unknown plugin");
@@ -734,6 +740,7 @@ int MidiPlugin_Startup(void)
     if (Game_MidiSubsystem == 1) plugin_name = "./midi-wildmidi.so";
     else if (Game_MidiSubsystem == 2) plugin_name = "./midi-bassmidi.so";
     else if (Game_MidiSubsystem == 3) plugin_name = "./midi-adlmidi.so";
+    else if (Game_MidiSubsystem == 4) plugin_name = "./midi-fluidsynth.so";
     else
     {
         fprintf(stderr, "%s: error: %s\n", "midi", "unknown plugin");
@@ -1020,6 +1027,10 @@ int32_t MidiPlugin_AIL_init_sequence(AIL_sequence *S, void *start, int32_t seque
     else
     {
         S->midi = xmi2mid((uint8_t *) start, sequence_num, &(S->midi_size));
+
+#if defined(__EMSCRIPTEN__)
+        vfs_fetch(Game_SoundFontPath, 0);
+#endif
 
         mp_sequence->midi = MP_functions.open_buffer(S->midi, S->midi_size);
     }

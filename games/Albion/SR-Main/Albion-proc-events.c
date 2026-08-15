@@ -28,6 +28,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-engine.h"
+#include "Albion-mouse.h"
 #include "Albion-proc-events.h"
 #include "input.h"
 
@@ -605,6 +606,13 @@ static void Game_CompareMPosition(int x, int y, int *XPosDiff, int *YPosDiff)
     }
 }
 
+static int Game_MouseInBottomBar(int32_t device_y)
+{
+    int32_t picture_y = (Game_Device2PictureY(device_y) * Game_VideoAspectY + 32767) >> 16;
+    // bar height
+    return picture_y >= (240 - 48);
+}
+
 static void Game_WarpMouse(int x, int y)
 {
     SDL_Event event;
@@ -622,6 +630,11 @@ void Game_RepositionMouse(void)
     Game_WarpMouse(Game_Picture2DeviceX((mouse_pos[1] * Game_VideoAspectXR + 32767) >> 16), Game_Picture2DeviceY((mouse_pos[0] * Game_VideoAspectYR + 32767) >> 16));
 }
 
+uint32_t Game_PositionMouse(Uint8 state, Sint32 x, Sint32 y)
+{
+    return Game_MouseMove(state, (Game_Device2PictureX(x) * Game_VideoAspectX + 32767) >> 16, (Game_Device2PictureY(y) * Game_VideoAspectY + 32767) >> 16);
+}
+
 int Game_ProcessMEvents(void)
 {
     int finish;
@@ -631,6 +644,8 @@ int Game_ProcessMEvents(void)
     VSyncTick = Game_VSyncTick;
     finish = 0;
 
+    Game_MouseLook_Update();
+
     while (!finish && Game_MQueueWrite != Game_MQueueRead)
     {
         cevent = &(Game_EventMQueue[Game_MQueueRead]);
@@ -638,6 +653,12 @@ int Game_ProcessMEvents(void)
         switch(cevent->type)
         {
             case SDL_MOUSEMOTION:
+                if (Game_MouseLook_Active())
+                {
+                    Game_MouseLook_Move(cevent->motion.xrel, cevent->motion.yrel);
+                    break;
+                }
+
                 //senquack - when in unscaled display mode, handle things a bit differently
                 //	since screen coordinates correspond directly to the game's framebuffer
                 //	coordinates, only shifted a bit
@@ -674,7 +695,7 @@ int Game_ProcessMEvents(void)
 
                     if (XPosDiff || YPosDiff)
                     {
-                        ret = Game_MouseMove(cevent->motion.state, (Game_Device2PictureX(newx) * Game_VideoAspectX + 32767) >> 16, (Game_Device2PictureY(newy) * Game_VideoAspectY + 32767) >> 16);
+                        ret = Game_PositionMouse(cevent->motion.state, newx, newy);
 
                         if ((Display_MouseLocked || Display_Fullscreen) && !ret)
                         {
@@ -721,6 +742,23 @@ int Game_ProcessMEvents(void)
                 // case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONUP:
             case SDL_MOUSEBUTTONDOWN:
+                if (cevent->button.button == SDL_BUTTON_LEFT && Game_ScreenType() == GAME_SCREEN_MAP_3D)
+                {
+                    if (cevent->type == SDL_MOUSEBUTTONDOWN && cevent->button.clicks >= 2 &&
+                        !Game_MouseInBottomBar(cevent->button.y))
+                    {
+                        // double-click in 3D area = toggle mouse look
+                        Game_MouseLook_Toggle();
+                        break;
+                    }
+
+                    if (Game_MouseLook_Active())
+                    {
+                        // ignore clicks in mouse look
+                        break;
+                    }
+                }
+
                 if (cevent->button.button == SDL_BUTTON_LEFT ||
                     cevent->button.button == SDL_BUTTON_RIGHT)
                 {
@@ -742,6 +780,17 @@ int Game_ProcessMEvents(void)
 
                 break;
                 // case SDL_MOUSEBUTTONUP, SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEWHEEL:
+                {
+                    int32_t wheel_y = cevent->wheel.y;
+
+                    if (cevent->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) wheel_y = -wheel_y;
+
+                    Game_MouseWheel_Move(wheel_y);
+                }
+
+                break;
+                // case SDL_MOUSEWHEEL:
             default:
                 break;
         } // switch(event.type)

@@ -13,8 +13,8 @@
 llasm/llasm
 **/smk_play/smk_play
 **/SR-Main/SR-Main
-**/SR-Main/data_embed/
-**/SR-Main/data_preload/
+**/SR-Main/data/
+**/SR-Main/midi_build/
 **/SR-Main/publish/
 **/SR-War/SR-War
 **/SR-Xcom1/SR-Geoscape
@@ -71,6 +71,4 @@ SR*/udis86*/**/tests/difftest.sh
 
 midi-plugins/**/include
 !midi-plugins/xcom12/include
-!midi-plugins/libADLMIDI/include
-!midi-plugins/libADLMIDI/include/**
 midi-plugins/**/lib

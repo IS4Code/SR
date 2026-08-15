@@ -52,7 +52,9 @@
 #include "Albion-timer.h"
 #include "Albion-music-midiplugin.h"
 #include "Albion-music-midiplugin2.h"
+#include "Albion-version.h"
 #include "Game_config.h"
+#include "Game_cursor.h"
 #include "Game_memory.h"
 #include "Game_scalerplugin.h"
 #include "Game_thread.h"
@@ -949,7 +951,13 @@ static int Game_Initialize(void)
     Game_MinCursorData[7] = 0x50;
     Game_MinCursorData[8] = 0xF8;
     Game_MinCursorData[9] = 0xD8;
+#if defined(__EMSCRIPTEN__)
+    Game_MouseCursor = 3; // render the game's cursor by default
+#else
     Game_MouseCursor = 0;
+#endif
+    Game_MouseLookEnabled = 0;
+    Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;
 
     Game_FopenList = NULL;
@@ -1004,6 +1012,11 @@ static int Game_Initialize(void)
     Game_AdvancedScaler = 1;
     Game_ScaleFactor = 0;
     Game_ExtraScalerThreads = -1;
+
+    Game_FieldOfViewDegrees = 44.22;
+    Game_PitchFovCompensation = 0;
+    Game_TileCullNearTolerancePercent = 0;
+    Game_TileCullAngleTolerancePercent = 0;
 
     Game_Window = NULL;
     Game_Renderer = NULL;
@@ -1077,14 +1090,14 @@ static int Game_Initialize(void)
 
     if (Game_UseEnhanced3DEngineNewValue)
     {
-        Game_ScreenViewpartOverlay[0] = (uint8_t *) x86_malloc(800*384*2);
+        Game_ScreenViewpartOverlay[0] = (uint8_t *) x86_malloc(720*384*2);
         if (Game_ScreenViewpartOverlay[0] == NULL)
         {
             fprintf(stderr, "Error: Not enough memory\n");
             Game_Cleanup();
             return -4;
         }
-        Game_ScreenViewpartOverlay[1] = Game_ScreenViewpartOverlay[0] + 800 * 384;
+        Game_ScreenViewpartOverlay[1] = Game_ScreenViewpartOverlay[0] + 720 * 384;
 
         Game_ScreenViewpartOriginal[0] = (uint8_t *) malloc(360*192*2);
         if (Game_ScreenViewpartOriginal[0] == NULL)
@@ -1396,6 +1409,9 @@ static void Game_HandleEvent(void);
 
 void Game_Iterate(void)
 {
+    // update the cursor
+    Game_Cursor_Update();
+
 #if defined(__EMSCRIPTEN__)
     // process all events piled up to the callback
     for (;;)
@@ -1813,6 +1829,10 @@ int main (int argc, char *argv[])
     Game_ReadFontData();
 
     Game_Initialize2();
+
+    Game_InitBuildInfo();
+
+    Game_Cursor_Hide();
 
 #if defined(__DEBUG__)
     fprintf(stderr, "Starting game event loop...\n");
