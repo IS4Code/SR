@@ -82,4 +82,44 @@ if (!Module.ENVIRONMENT_IS_PTHREAD)
             removeRunDependency(dependency);
         });
     });
+
+    Module.onRuntimeInitialized = function () {
+        Game_RuntimeReady = true;
+
+        try
+        {
+            var hash = location.hash;
+            if (hash.length <= 1) return;
+
+            var query = (hash.charAt(1) === '?') ? hash.substring(2) : hash.substring(1);
+            var params = new URLSearchParams(query);
+            var overrides = "";
+
+            params.forEach(function (value, key) {
+                overrides += key + "=" + value + "\n";
+            });
+
+            if (!overrides) return;
+
+            var existing = "";
+            try { existing = FS.readFile("/Albion.cfg", { encoding: "utf8" }); } catch (e) {}
+            FS.writeFile("/Albion.cfg", existing + "\n" + overrides);
+        }
+        catch (e)
+        {
+            console.error("Config override failed: " + e);
+        }
+
+        try
+        {
+            if (Game_VideoOverlayActive && Module.ccall)
+            {
+                Module.ccall("Game_WebVideo_Pause", null, [], []);
+            }
+        }
+        catch (e)
+        {
+            console.error("Video overlay pause sync failed: " + e);
+        }
+    };
 }

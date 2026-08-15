@@ -43,14 +43,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
 #include "Game_defs.h"
 #include "Game_scalerplugin.h"
 #include "Game_vars.h"
+#include "Albion-screenshot.h"
 #include "Albion-proc.h"
 #include "Albion-proc-vfs.h"
 #include "display/overlay.h"
 
-#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__) || defined(__EMSCRIPTEN__)
 #undef ZLIB_DYNAMIC
 #else
 #define ZLIB_DYNAMIC 1
@@ -1010,6 +1014,162 @@ static uint8_t *fill_png_pixel_data(uint8_t *src, int image_mode, int DrawOverla
     return curptr;
 }
 
+static const char *Game_Screenshot_Extension()
+{
+    switch (Game_ScreenshotFormat)
+    {
+        case 0:
+        case 1:
+        case 2:
+            return ".lbm";
+        case 3:
+            return ".tga";
+        case 4:
+            return ".bmp";
+        case 5:
+            return ".png";
+        default:
+            return NULL;
+    }
+}
+
+#if defined(__EMSCRIPTEN__)
+
+static const char *Game_Screenshot_Type()
+{
+    switch (Game_ScreenshotFormat)
+    {
+        case 0:
+        case 1:
+        case 2:
+            return "image/x-ilbm";
+        case 3:
+            return "image/x-tga";
+        case 4:
+            return "image/bmp";
+        case 5:
+            return "image/png";
+        default:
+            return "application/octet-stream";
+    }
+}
+
+static void Game_Screenshot_Download(const uint8_t *data, unsigned int length, const char *name)
+{
+    MAIN_THREAD_EM_ASM({
+        var ptr = $0;
+        var len = $1;
+        var name = UTF8ToString($2);
+        var type = UTF8ToString($3);
+        var bytes = HEAPU8.subarray(ptr, ptr + len);
+        var url = URL.createObjectURL(new Blob([bytes], { type: type }));
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    }, data, length, name, Game_Screenshot_Type());
+}
+
+static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int length)
+{
+    MAIN_THREAD_EM_ASM({
+        var ptr = $0;
+        var len = $1;
+        var type = UTF8ToString($2);
+        var extension = UTF8ToString($3);
+        var bytes = HEAPU8.subarray(ptr, ptr + len);
+        var blob = new Blob([bytes], { type: type });
+        
+        var caption = "Albion screenshot - " + new Date().toLocaleString();
+
+        function downloadFallback(reason)
+        {
+            if (Module.print) Module.print("Error capturing screenshot: " + reason + " - downloading instead.");
+            
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = caption + extension;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+        }
+
+        if (!navigator.clipboard || !navigator.clipboard.write || (typeof ClipboardItem === "undefined"))
+        {
+            downloadFallback("this browser does not support writing images to the clipboard");
+            return;
+        }
+
+        var bytesBase64;
+        if (Uint8Array.prototype.toBase64)
+        {
+            bytesBase64 = bytes.toBase64();
+        }
+        else
+        {
+            var binary = [];
+            var chunkSize = 0x8000;
+            for (var i = 0; i < bytes.length; i += chunkSize)
+            {
+                binary.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
+            }
+            bytesBase64 = btoa(binary.join(""));
+        }
+
+        var img = document.createElement("img");
+        img.src = "data:" + type + ";base64," + bytesBase64;
+        img.alt = img.title = caption;
+
+        var item = {};
+        item[type] = blob;
+        item["text/html"] = new Blob([img.outerHTML], { type: "text/html" });
+
+        try
+        {
+            navigator.clipboard.write([new ClipboardItem(item)]).then(function () {
+                if (Module.print) Module.print(caption + " copied to clipboard.");
+            }).catch(function (e) {
+                downloadFallback("could not copy to clipboard (" + e + ")");
+            });
+        }
+        catch (e)
+        {
+            downloadFallback("could not copy to clipboard (" + e + ")");
+        }
+    }, data, length, Game_Screenshot_Type(), Game_Screenshot_Extension());
+}
+
+static int Game_ScreenshotSavingToClipboard = 0; // used by Game_save_screenshot
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void CCALL Game_save_screenshot(const char *filename);
+
+void Game_Screenshot_AutoCapture(void)
+{
+    int saved_format = Game_ScreenshotFormat;
+
+    Game_ScreenshotFormat = 5; // PNG
+    Game_ScreenshotSavingToClipboard = 1;
+
+    Game_save_screenshot(NULL);
+
+    Game_ScreenshotSavingToClipboard = 0;
+    Game_ScreenshotFormat = saved_format;
+}
+#else
+void Game_Screenshot_AutoCapture(void)
+{
+    // Unused
+}
+#endif
+
 // http://www.shikadi.net/moddingwiki/LBM_Format
 
 #ifdef __cplusplus
@@ -1020,8 +1180,10 @@ void CCALL Game_save_screenshot(const char *filename)
     uint8_t *screenshot_src, *buffer, *curptr, *chunk_size_ptr[2];
     uint32_t *buf_scaled;
     unsigned int width, height, width_in_file, palette_index;
+#if !defined(__EMSCRIPTEN__)
     void *stream;
     FILE *f;
+#endif
     int image_mode, DrawOverlay;
     const char *extension;
     char *filename2;
@@ -1173,26 +1335,7 @@ void CCALL Game_save_screenshot(const char *filename)
 
     curptr = buffer;
 
-    switch (Game_ScreenshotFormat)
-    {
-        case 0:
-        case 1:
-        case 2:
-            extension = ".lbm";
-            break;
-        case 3:
-            extension = ".tga";
-            break;
-        case 4:
-            extension = ".bmp";
-            break;
-        case 5:
-            extension = ".png";
-            break;
-        default:
-            extension = NULL;
-            break;
-    }
+    extension = Game_Screenshot_Extension();
 
     if (Game_ScreenshotAutomaticFilename)
     {
@@ -2441,6 +2584,16 @@ void CCALL Game_save_screenshot(const char *filename)
         curptr = write_32be(curptr, zlib_crc32(0, curptr - (4 + 0), 4 + 0));
     }
 
+#if defined(__EMSCRIPTEN__)
+    if (Game_ScreenshotSavingToClipboard)
+    {
+        Game_Screenshot_CopyToClipboard(buffer, (unsigned int)(curptr - buffer));
+    }
+    else
+    {
+        Game_Screenshot_Download(buffer, (unsigned int)(curptr - buffer), (filename2 != NULL) ? filename2 : filename);
+    }
+#else
     if (Game_ScreenshotAutomaticFilename)
     {
         f = fopen(filename2, "wb");
@@ -2460,6 +2613,7 @@ void CCALL Game_save_screenshot(const char *filename)
             Game_fclose(stream);
         }
     }
+#endif
 
     if (filename2 != NULL) free(filename2);
     if (buf_scaled != NULL) free(buf_scaled);

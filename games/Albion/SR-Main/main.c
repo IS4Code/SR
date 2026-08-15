@@ -34,6 +34,9 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#define RESIZABLE_DISPLAY 1
+#else
+#define RESIZABLE_DISPLAY 0
 #endif
 
 #include <time.h>
@@ -152,17 +155,28 @@ void Game_CloseThreadConcurency(void)
 
 static void Display_RecalculateResolution(int w, int h)
 {
+    // preserve original dimensions
+    static int have_aspect = 0;
+    static uint32_t AspectWidth, AspectHeight;
+
+    if (!have_aspect)
+    {
+        AspectWidth = Display_Width;
+        AspectHeight = Display_Height;
+        have_aspect = 1;
+    }
+
     if (Display_FSType == 1)
     {
-        if ((((double)w) / h) > (((double)Display_Width) / Display_Height))
+        if ((((double)w) / h) > (((double)AspectWidth) / AspectHeight))
         {
             Picture_Height = h;
-            Picture_Width = (int32_t)((((double)h) * Display_Width) / Display_Height);
+            Picture_Width = (int32_t)((((double)h) * AspectWidth) / AspectHeight);
         }
         else
         {
             Picture_Width = w;
-            Picture_Height = (int32_t)((((double)w) * Display_Height) / Display_Width);
+            Picture_Height = (int32_t)((((double)w) * AspectHeight) / AspectWidth);
         }
     }
     else
@@ -186,8 +200,41 @@ static void Display_RecalculateResolution(int w, int h)
     Game_VideoAspectYR = ((Picture_Height-1) << 16) / (240-1);
 }
 
+static int ClearRenderer;
+static int Game_LastViewportOutputWidth = -1, Game_LastViewportOutputHeight = -1;
+static void Game_SyncDisplayViewport(void)
+{
+    int w, h;
+    SDL_Rect viewport;
+
+    if (Game_Renderer == NULL) return;
+    if (!((Display_Fullscreen && Display_FSType) || RESIZABLE_DISPLAY)) return;
+
+    if (SDL_GetRendererOutputSize(Game_Renderer, &w, &h))
+    {
+        SDL_GetWindowSize(Game_Window, &w, &h);
+    }
+
+    if (w == Game_LastViewportOutputWidth && h == Game_LastViewportOutputHeight) return;
+
+    Display_RecalculateResolution(w, h);
+
+    viewport.x = Picture_Position_UL_X;
+    viewport.y = Picture_Position_UL_Y;
+    viewport.w = Picture_Width;
+    viewport.h = Picture_Height;
+    SDL_RenderSetViewport(Game_Renderer, &viewport);
+    ClearRenderer = 4;
+
+    Game_LastViewportOutputWidth = w;
+    Game_LastViewportOutputHeight = h;
+}
+
 static void Game_Display_Create(void)
 {
+    Game_LastViewportOutputWidth = -1;
+    Game_LastViewportOutputHeight = -1;
+
     if (Display_Fullscreen && Display_FSType)
     {
         Game_Window = SDL_CreateWindow("SDL Albion", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_HIDDEN | (Display_MouseLocked ? SDL_WINDOW_INPUT_GRABBED : 0));
@@ -205,6 +252,9 @@ static void Game_Display_Create(void)
         {
             flags |= SDL_WINDOW_INPUT_GRABBED;
         }
+#if RESIZABLE_DISPLAY
+        flags |= SDL_WINDOW_RESIZABLE;
+#endif
 
         Game_Window = SDL_CreateWindow("SDL Albion", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, Display_Width, Display_Height, flags);
     }
@@ -216,24 +266,7 @@ static void Game_Display_Create(void)
         {
             SDL_ShowWindow(Game_Window);
 
-            if (Display_Fullscreen && Display_FSType)
-            {
-                int w, h;
-                SDL_Rect viewport;
-
-                if (SDL_GetRendererOutputSize(Game_Renderer, &w, &h))
-                {
-                    SDL_GetWindowSize(Game_Window, &w, &h);
-                }
-
-                Display_RecalculateResolution(w, h);
-
-                viewport.x = Picture_Position_UL_X;
-                viewport.y = Picture_Position_UL_Y;
-                viewport.w = Picture_Width;
-                viewport.h = Picture_Height;
-                SDL_RenderSetViewport(Game_Renderer, &viewport);
-            }
+            Game_SyncDisplayViewport();
         }
         else
         {
@@ -1333,7 +1366,7 @@ static uint32_t AppMouseFocus;
 static uint32_t AppInputFocus;
 static uint32_t AppActive;
 static int FlipActive, CreateAfterFlip, DestroyAfterFlip, NumEvents, PumpEvents;
-static int ClearRenderer, MouseOldX, MouseOldY;
+static int MouseOldX, MouseOldY;
 
 static void Game_Iterate(void);
 
@@ -1490,17 +1523,7 @@ static void Game_HandleEvent(void)
                 case SDL_WINDOWEVENT_RESIZED:
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                 case SDL_WINDOWEVENT_DISPLAY_CHANGED:
-                    if (Display_Fullscreen && Display_FSType && Game_Renderer != NULL)
-                    {
-                        SDL_Rect viewport;
-
-                        viewport.x = Picture_Position_UL_X;
-                        viewport.y = Picture_Position_UL_Y;
-                        viewport.w = Picture_Width;
-                        viewport.h = Picture_Height;
-                        SDL_RenderSetViewport(Game_Renderer, &viewport);
-                        ClearRenderer = 4;
-                    }
+                    Game_SyncDisplayViewport();
                     break;
             }
 
@@ -1641,6 +1664,8 @@ static void Game_HandleEvent(void)
                 case EC_DISPLAY_FLIP_FINISH:
                     if (FlipActive)
                     {
+                        Game_SyncDisplayViewport();
+
                         if (Scaler_ScaleTextureData)
                         {
                             SDL_UpdateTexture(Game_Texture[Game_CurrentTexture], NULL, Game_ScaledTextureData, Scaler_ScaleFactor * Render_Width * Display_Bitsperpixel / 8);

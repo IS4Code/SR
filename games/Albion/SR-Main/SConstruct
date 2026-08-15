@@ -316,7 +316,7 @@ elif device == 'web':
     preload_flags = ' '.join('--preload-file data/%s@/%s' % (f, f) for f in data_preloaded_files)
 
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
-               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web_prerun.js -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap"]',
+               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web/prerun.js --shell-file web/shell.html -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap","FS"]',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
@@ -354,6 +354,12 @@ elif device == 'web':
         except OSError:
             pass
 
+        web_static_files = ['style.css', 'controls.js', 'module.js', 'video.js', 'saves.js']
+        for web_static_name in web_static_files:
+            web_static_src = os.path.join('web', web_static_name)
+            if os.path.isfile(web_static_src):
+                sync_tree(web_static_src, os.path.join('publish', web_static_name))
+
         # files streamed at run-time
         publish_data_dir = os.path.join('publish', 'data')
         remote_sources = [('XLDLIBS', os.path.join('data', 'XLDLIBS')),
@@ -366,6 +372,10 @@ elif device == 'web':
         for rel_name, src_path in remote_sources:
             if os.path.exists(src_path):
                 sync_tree(src_path, os.path.join(publish_data_dir, rel_name))
+
+        video_src_dir = os.path.join('data', 'VIDEO')
+        if os.path.isdir(video_src_dir):
+            sync_tree(video_src_dir, os.path.join(publish_data_dir, 'VIDEO'))
 
         manifest = {}
         for rel_name, _ in remote_sources:
@@ -523,7 +533,7 @@ version_objs = [version_obj]
 
 program = env.Program(program_name, sources + display_objs + audio_objs + input_objs + arch_objs + midi_objs + version_objs)
 if device == 'web':
-    env.Depends(program, 'web_prerun.js')
+    env.Depends(program, ['web/prerun.js', 'web/shell.html'])
     if os.path.isfile(fs_lib_path):
         env.Depends(program, fs_lib_path)
     baked_deps = []

@@ -24,6 +24,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
 #include "Game_vars.h"
 #include "Game_scalerplugin.h"
 #include "Game_thread.h"
@@ -1109,24 +1112,89 @@ SMK_exit1:
 }
 
 
+#if defined(__EMSCRIPTEN__)
+
+// Alternative to play_smk for web, controlled externally via semaphore
+static SDL_sem *Game_WebVideoSemaphore;
+
+EMSCRIPTEN_KEEPALIVE
+void Game_WebVideo_NotifyDone(void)
+{
+    if (Game_WebVideoSemaphore) SDL_SemPost(Game_WebVideoSemaphore);
+}
+
+// Controlled during initial intro playback
+EMSCRIPTEN_KEEPALIVE
+void Game_WebVideo_Pause(void)
+{
+    SMK_Playing = 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void Game_WebVideo_Resume(void)
+{
+    SMK_Playing = 0;
+}
+
+static void play_web_video(const char *url, double volume)
+{
+    if (!Game_WebVideoSemaphore)
+    {
+        Game_WebVideoSemaphore = SDL_CreateSemaphore(0);
+        if (!Game_WebVideoSemaphore) return;
+    }
+
+    SMK_Playing = 1;
+
+    // Show overlay and notify when done
+    MAIN_THREAD_EM_ASM({
+        var url = UTF8ToString($0);
+        Game_ShowVideoOverlay(url, function () {
+            Module.ccall("Game_WebVideo_NotifyDone", null, [], []);
+        }, null, $1);
+    }, url, volume);
+
+    SDL_SemWait(Game_WebVideoSemaphore);
+
+    SMK_Playing = 0;
+}
+#endif
+
 void CCALL SMK_ShowMenu(void)
 {
     if (!firstMenu) return;
 
     firstMenu = 0;
 
+#if defined(__EMSCRIPTEN__)
+    // initial intro played solely through web
+#else
     if (!Game_PlayIntro) return;
 
     play_smk("INTRO.SMK");
+#endif
 }
+
+#if defined(__EMSCRIPTEN__)
+extern uint16_t loc_13E9F4;
+#define SOUND_Global_MIDI_volume loc_13E9F4
+#endif
 
 void CCALL SMK_PlayIntro(void)
 {
+#if defined(__EMSCRIPTEN__)
+    play_web_video("data/VIDEO/INTRO.MP4", SOUND_Global_MIDI_volume / 127.0);
+#else
     play_smk("INTRO.SMK");
+#endif
 }
 
 void CCALL SMK_PlayCredits(void)
 {
+#if defined(__EMSCRIPTEN__)
+    play_web_video("data/VIDEO/CREDITS.MP4", SOUND_Global_MIDI_volume / 127.0);
+#else
     play_smk("CREDITS.SMK");
+#endif
 }
 

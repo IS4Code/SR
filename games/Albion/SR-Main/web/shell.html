@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play Albion On-line</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="topbar">
+<div class="buttons">
+<button id="btn-game" class="active" type="button">Game</button>
+<button id="btn-log" type="button">Log</button>
+<button id="btn-export-saves" type="button">Export saves</button>
+<button id="btn-import-saves" type="button">Import saves</button>
+</div>
+<div id="status-text"></div>
+<div id="credits"><a href="https://github.com/IS4Code/Albion">Made by IS4</a></div>
+</div>
+<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<textarea id="output" rows="8" readonly></textarea>
+<video id="video-overlay" playsinline disablepictureinpicture oncontextmenu="event.preventDefault()" tabindex="-1"></video>
+<div id="start-overlay"><button id="btn-start" type="button">▶ Start Albion</button></div>
+<input id="import-saves-input" type="file" accept=".zip,application/zip" style="display: none;">
+<script type="text/javascript" src="controls.js"></script>
+<script type="text/javascript" src="module.js"></script>
+<script type="text/javascript" src="video.js"></script>
+<script type="text/javascript" src="saves.js"></script>
+<template id="deferred-module-script">{{{ SCRIPT }}}</template>
+<script type="text/javascript">
+window.addEventListener('load', function () {
+  var tmpl = document.getElementById('deferred-module-script');
+  document.body.appendChild(tmpl.content.cloneNode(true));
+});
+</script>
+</body>
+</html>
