@@ -222,7 +222,11 @@ void ScalerPlugin_Shutdown(void)
             extra_threads[index].cmd = 0;
             SDL_SemPost(extra_threads[index].startcmd);
 
+#if defined(__EMSCRIPTEN__)
+            SDL_DetachThread(extra_threads[index].thread);
+#else
             SDL_WaitThread(extra_threads[index].thread, NULL);
+#endif
             extra_threads[index].thread = NULL;
 
             SDL_DestroySemaphore(extra_threads[index].finishcmd);
