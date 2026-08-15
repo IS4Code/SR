@@ -80,7 +80,7 @@ loc_BF442,3,;cmp eax, 1024|cmovult eax, 1024, tmpcnd, 0, 1|;jb loc_BF481|ctcallz
 
 loc_BF3C7,3,;cmp eax, 1024|cmovult eax, 1024, tmpcnd, 0, 1|;jb loc_BF411|ctcallz tmpcnd, loc_BF411|tcall loc_BF3C7_1|endp|proc loc_BF3C7_1|;test byte [eax], 60h|load8z tmp0, eax, 1|and tmpcnd, tmp0, 0x60 ; fix reading from NULL pointer ('test byte [eax], 60h' must set flags for 'jz')
 
-loc_4D505,4,;or eax, eax|;je loc_4D509|;mov [eax+0x28], dx|ifnz eax|add tmpadr, eax, 40|store16 edx, tmpadr, 1|endif|tcall loc_4D509|endp ; fix reading from NULL pointer
+loc_4D505,4,;or eax, eax|;je loc_4D509|;mov [eax+0x28], dx|ifnz eax|add tmpadr, eax, 40|store16 edx, tmpadr, 1|endif|tcall loc_4D509|endp ; fix writing to NULL pointer
 
 loc_3664B,3,;or edx, edx|;je loc_3664E|;mov al, [edx+0x1]|;loc_3664E:|ifnz edx|add tmpadr, edx, 1|load8z eax, tmpadr, 1|endif ; fix reading from NULL pointer
 

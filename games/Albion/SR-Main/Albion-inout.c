@@ -30,9 +30,9 @@
 #include "display.h"
 
 #define EAX (_eax)
-#define AX ((uint16_t)(_eax))
-#define AL ((uint8_t)(_eax))
-#define AH ((uint8_t)((_eax) >> 8))
+#define AX ((uint16_t)_eax)
+#define AL ((uint8_t)_eax)
+#define AH ((uint8_t)(_eax >> 8))
 
 
 uint32_t palette_index, color_index;
