@@ -78,6 +78,7 @@ EXTERNAL_VARIABLE int Game_MouseLookEnabled;		/* enable mouse look ? */
 EXTERNAL_VARIABLE int Game_MouseLookSensitivity;	/* enable mouselook sensitivity */
 
 EXTERNAL_CVAR_BGN uint32_t Game_InEnteringText;		/* in entering text window */ EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN uint32_t Game_InKeywords;			/* in keywords window */ EXTERNAL_CVAR_END
 EXTERNAL_CVAR_BGN uint32_t Game_InMenuOptions;		/* in menu options window */ EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE void *Game_FopenList;				/* list of files opened using Game_fopen */
