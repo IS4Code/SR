@@ -34,7 +34,7 @@
 
 int Game_MovementEnabled(void)
 {
-    return !Game_InEnteringText && !Game_InMenuOptions;
+    return !Game_InEnteringText && !Game_InKeywords && !Game_InMenuOptions;
 }
 
 static int Game_SwitchCtrl(void)
