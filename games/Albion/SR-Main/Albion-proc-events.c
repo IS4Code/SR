@@ -33,7 +33,7 @@
 
 int Game_MovementEnabled(void)
 {
-    return !Game_InEnteringText && !Game_InMenuOptions;
+    return !Game_InEnteringText && !Game_InKeywords && !Game_InMenuOptions;
 }
 
 void Game_ProcessKEvents(void)
