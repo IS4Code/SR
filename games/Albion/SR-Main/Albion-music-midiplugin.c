@@ -884,7 +884,11 @@ void MidiPlugin_Shutdown(void)
     SDL_SemPost(MP_sequence[0].sem);
     SDL_SemPost(MP_sequence[1].sem);
     SDL_SemPost(MP_sequence[2].sem);
+#if defined(__EMSCRIPTEN__)
+    SDL_DetachThread(MP_thread);
+#else
     SDL_WaitThread(MP_thread, NULL);
+#endif
 
     // close midi files
     for (index = 0; index <= 2; index++)
