@@ -30,6 +30,7 @@
 #include "Albion-engine.h"
 #include "Albion-mouse.h"
 #include "Albion-proc-events.h"
+#include "Albion-screenshot.h"
 #include "input.h"
 
 int Game_MovementEnabled(void)
@@ -102,6 +103,12 @@ void Game_ProcessKEvents(void)
         {
             case SDL_KEYDOWN:
             case SDL_KEYUP:
+                if ((cevent->type == SDL_KEYDOWN) && !cevent->key.repeat && (cevent->key.keysym.sym == SDLK_F12) &&
+                    !(cevent->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT | KMOD_GUI)))
+                {
+                    Game_Screenshot_AutoCapture();
+                }
+
                 if (cevent->key.keysym.sym == SDLK_PAUSE)
                 {
                     if (alt_code_state >= 1) alt_code_state = -1;

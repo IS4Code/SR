@@ -224,3 +224,5 @@ loc_1344B8,loc_1344B8
 loc_1344BA,loc_1344BA
 loc_130004,loc_130004
 loc_13000D,loc_13000D
+
+loc_13E9F4,loc_13E9F4
