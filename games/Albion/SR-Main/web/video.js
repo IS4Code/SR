@@ -1,6 +1,7 @@
 var videoOverlay = document.getElementById('video-overlay');
 Game_VideoOverlayActive = false;
 Game_VideoOverlayFinish = null;
+Game_RuntimeReady = false;
 
 function ccallSafe(name) {
   if (Game_RuntimeReady && Module.ccall) {
