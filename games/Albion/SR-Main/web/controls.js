@@ -10,7 +10,7 @@ function shouldHandleKey(e)
     if (e.type === 'keydown' && e.key === 'Escape' && Game_VideoOverlayFinish) Game_VideoOverlayFinish();
     return true;
   }
-  if (document.body.classList.contains('show-log')) return true;
+  if (!document.body.classList.contains('page-game')) return true;
   if (e.shiftKey || e.altKey || e.metaKey) return false;
   if (e.key === 'F11') return !e.ctrlKey;
   if (e.key === 'F5') return true;
@@ -33,14 +33,24 @@ window.addEventListener('beforeunload', function (e) {
   e.returnValue = "Remember to save the game before exiting the page.";
 });
 
-var btnGame = document.getElementById('btn-game');
-var btnLog = document.getElementById('btn-log');
+var Game_Pages = ['game', 'settings', 'log'];
+var Game_PageButtons = {
+  game: document.getElementById('btn-game'),
+  settings: document.getElementById('btn-settings'),
+  log: document.getElementById('btn-log'),
+};
 
-function showPanel(log)
+function showPanel(page)
 {
-  document.body.classList.toggle('show-log', log);
-  btnGame.classList.toggle('active', !log);
-  btnLog.classList.toggle('active', log);
+  if (page === true) page = 'log';
+  else if (page === false) page = 'game';
+
+  Game_Pages.forEach(function (p) {
+    document.body.classList.toggle('page-' + p, p === page);
+    if (Game_PageButtons[p]) Game_PageButtons[p].classList.toggle('active', p === page);
+  });
 }
-btnGame.addEventListener('click', function () { showPanel(false); });
-btnLog.addEventListener('click', function () { showPanel(true); });
+
+Game_Pages.forEach(function (p) {
+  if (Game_PageButtons[p]) Game_PageButtons[p].addEventListener('click', function () { showPanel(p); });
+});

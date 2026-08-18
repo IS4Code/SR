@@ -1,6 +1,7 @@
 var statusElement = document.getElementById('status-text');
 
 var Module = {
+  noInitialRun: true,
   preRun: [],
   postRun: [],
   print: (function () {

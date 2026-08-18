@@ -7,10 +7,11 @@
 <title>Play Albion On-line</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="page-game">
 <div id="topbar">
 <div class="buttons">
 <button id="btn-game" class="active" type="button">Game</button>
+<button id="btn-settings" type="button">Settings</button>
 <button id="btn-log" type="button">Log</button>
 <button id="btn-export-saves" type="button">Export saves</button>
 <button id="btn-import-saves" type="button">Import saves</button>
@@ -18,12 +19,22 @@
 <div id="status-text"></div>
 <div id="credits"><a href="https://github.com/IS4Code/Albion">Made by IS4</a></div>
 </div>
+<section id="pages">
+<div id="page-game" class="page">
 <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-<textarea id="output" rows="8" readonly></textarea>
 <video id="video-overlay" playsinline disablepictureinpicture oncontextmenu="event.preventDefault()" tabindex="-1"></video>
 <div id="start-overlay"><button id="btn-start" type="button">▶ Start Albion</button></div>
+</div>
+<div id="page-settings" class="page">
+<div id="settings-panel"></div>
+</div>
+<div id="page-log" class="page">
+<textarea id="output" rows="8" readonly></textarea>
+</div>
+</section>
 <input id="import-saves-input" type="file" accept=".zip,application/zip" style="display: none;">
 <script type="text/javascript" src="controls.js"></script>
+<script type="text/javascript" src="settings.js"></script>
 <script type="text/javascript" src="module.js"></script>
 <script type="text/javascript" src="video.js"></script>
 <script type="text/javascript" src="saves.js"></script>
