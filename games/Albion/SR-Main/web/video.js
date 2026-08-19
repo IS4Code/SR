@@ -83,7 +83,7 @@ function Game_ShowVideoOverlay(url, onFinish, fadeConfig, volume) {
   document.body.classList.add('show-video', 'video-blocking');
 
   videoOverlay.currentTime = 0;
-  videoOverlay.volume = (volume == null) ? 1.0 : volume;
+  videoOverlay.volume = 0.5 * ((volume == null) ? 1.0 : volume);
   videoOverlay.src = url;
 
   videoOverlay.play().catch(function () { done('failed'); });
