@@ -1061,7 +1061,7 @@ static void Game_Screenshot_Download(const uint8_t *data, unsigned int length, c
         var len = $1;
         var name = UTF8ToString($2);
         var type = UTF8ToString($3);
-        var bytes = HEAPU8.subarray(ptr, ptr + len);
+        var bytes = HEAPU8.slice(ptr, ptr + len);
         var url = URL.createObjectURL(new Blob([bytes], { type: type }));
         var a = document.createElement("a");
         a.href = url;
@@ -1080,7 +1080,7 @@ static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int le
         var len = $1;
         var type = UTF8ToString($2);
         var extension = UTF8ToString($3);
-        var bytes = HEAPU8.subarray(ptr, ptr + len);
+        var bytes = HEAPU8.slice(ptr, ptr + len);
         var blob = new Blob([bytes], { type: type });
         
         var caption = "Albion screenshot - " + new Date().toLocaleString();
