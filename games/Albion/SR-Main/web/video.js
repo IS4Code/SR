@@ -9,6 +9,19 @@ function ccallSafe(name) {
   }
 }
 
+var Game_StartRequested = false;
+var Game_MainCalled = false;
+function Game_MaybeStartGame() {
+  if (!Game_StartRequested || !Game_RuntimeReady || Game_MainCalled) return;
+  Game_MainCalled = true;
+  try {
+    if (typeof Game_ApplyBootOverrides === 'function') Game_ApplyBootOverrides();
+  } catch (e) {
+    console.error("Config override failed: " + e);
+  }
+  if (Module.callMain) Module.callMain();
+}
+
 function Game_ShowVideoOverlay(url, onFinish, fadeConfig, volume) {
   var finished = false;
   var stopped = false;
@@ -66,7 +79,7 @@ function Game_ShowVideoOverlay(url, onFinish, fadeConfig, volume) {
 
   Game_VideoOverlayActive = true;
   Game_VideoOverlayFinish = function () { done('esc'); };
-  document.body.classList.remove('show-log');
+  if (typeof showPanel === 'function') showPanel('game');
   document.body.classList.add('show-video', 'video-blocking');
 
   videoOverlay.currentTime = 0;
@@ -74,6 +87,14 @@ function Game_ShowVideoOverlay(url, onFinish, fadeConfig, volume) {
   videoOverlay.src = url;
 
   videoOverlay.play().catch(function () { done('failed'); });
+}
+
+function Game_IntroVolume()
+{
+  var raw = (typeof Game_GetCookie === 'function') ? Game_GetCookie('alb_opt_MIDI_VOLUME') : null;
+  var n = parseInt(raw, 10);
+  if (!(n >= 0)) n = 64;
+  return Math.max(0, Math.min(1, n / 128));
 }
 
 function Game_PrepareIntro()
@@ -91,8 +112,11 @@ function Game_PrepareIntro()
     Game_ShowVideoOverlay(
       'data/VIDEO/INTRO.MP4',
       function () { ccallSafe('Game_WebVideo_Resume'); },
-      { at: 156.250, duration: 1.175 }
+      { at: 156.250, duration: 1.175 },
+      Game_IntroVolume()
     );
+    Game_StartRequested = true;
+    setTimeout(Game_MaybeStartGame, 0);
   }, { once: true });
 }
 Game_PrepareIntro();

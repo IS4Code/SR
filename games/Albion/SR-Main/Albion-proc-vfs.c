@@ -44,6 +44,7 @@
 #include "Game_misc.h"
 #include "Game_thread.h"
 #include "virtualfs.h"
+#include "Albion-websettings.h"
 
 
 static int file_pattern_match(const char *filename, const char *pattern)
@@ -281,6 +282,12 @@ int32_t CCALL Game_rename(const char *oldpath, const char *newpath)
             }
 
             vfs_delete_entry(realdir_old);
+
+            // Write_INI_variable() finishes by renaming onto the original file.
+            if (strcasecmp(newpath, "SETUP.INI") == 0)
+            {
+                Game_SyncSetupOptions((char *) &temp_str_new);
+            }
         }
 
         return ret;

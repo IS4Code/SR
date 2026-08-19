@@ -6,6 +6,7 @@ html, body {
   overflow: hidden;
   background: black;
   font-family: "Segoe UI", Arial, sans-serif;
+  color-scheme: dark;
 }
 
 a {
@@ -16,6 +17,11 @@ a:active, a:focus {
   color: #ffff00;
 }
 
+.page { display: none; }
+body.page-game #page-game,
+body.page-settings #page-settings,
+body.page-log #page-log { display: block; }
+
 #canvas, #output {
   position: fixed;
   inset: 0;
@@ -23,30 +29,84 @@ a:active, a:focus {
   height: 100%;
   margin: 0;
   border: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
 #canvas {
+  padding: 0;
   background: black;
   outline: none;
 }
 
 #output {
-  top: 40px;
+  padding: 48px 8px 8px;
   background: black;
   color: lightgray;
   font-family: 'Lucida Console', Monaco, monospace;
   font-size: 13px;
   resize: none;
   outline: none;
-  padding: 8px;
-  z-index: 1;
-  visibility: hidden;
 }
 
-body.show-log #output { visibility: visible; }
-body.show-log #canvas { visibility: hidden; }
+#settings-panel {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 48px 16px 16px;
+  background: black;
+  color: rgba(255, 217, 76, 0.9);
+  font-size: 13px;
+  overflow-y: auto;
+}
+
+#settings-panel fieldset {
+  border: 1px solid rgba(255, 217, 76, 0.25);
+  border-radius: 4px;
+  margin: 0 0 12px;
+  padding: 4px 12px 12px;
+  max-width: 420px;
+}
+
+#settings-panel legend {
+  padding: 0 6px;
+  color: rgba(255, 217, 76, 0.85);
+  font-weight: bold;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.settings-label {
+  flex: 1 1 auto;
+  color: rgba(255, 217, 76, 0.75);
+}
+
+.settings-row select,
+.settings-row input {
+  flex: 0 0 auto;
+  width: 160px;
+  background-color: #241d06;
+  color: #ffd94c;
+  border: 1px solid rgba(255, 217, 76, 0.3);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font: inherit;
+}
+
+.settings-row select option {
+  background-color: #241d06;
+  color: #ffd94c;
+}
+
+.settings-row select:disabled,
+.settings-row input:disabled {
+  opacity: 0.5;
+}
 
 #topbar {
   position: fixed;
@@ -139,6 +199,8 @@ body.video-blocking #btn-import-saves {
     justify-self: start;
     align-self: end;
   }
+
+  #output, #settings-panel { padding-top: 8px; }
 }
 
 #video-overlay {
@@ -154,9 +216,9 @@ body.video-blocking #btn-import-saves {
   cursor: none;
 }
 
-body.show-video:not(.show-log) #video-overlay { visibility: visible; }
-body.show-video:not(.show-log) #canvas { visibility: hidden; }
-body.show-video.fading:not(.show-log) #canvas { visibility: visible; }
+body.show-video #video-overlay { visibility: visible; }
+body.show-video #canvas { visibility: hidden; }
+body.show-video.fading #canvas { visibility: visible; }
 body.fading #video-overlay { pointer-events: none; }
 
 #start-overlay {
