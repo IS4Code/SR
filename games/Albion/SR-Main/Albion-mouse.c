@@ -16,6 +16,9 @@ extern int16_t loc_14A492; // I3DM.Horizon_Y (offset in pixels from horizon)
 extern uint16_t loc_14A49C; // I3DM.Window_3D_height
 extern int32_t loc_140008; // vertical focal length
 
+#define GAME_PICTURE_MIDDLE_X 180
+#define GAME_PICTURE_MIDDLE_Y 120
+
 static int Game_MouseLookActive = 0;
 
 #if defined(__EMSCRIPTEN__)
@@ -72,6 +75,15 @@ static void Game_MouseLook_SetActive(int active)
     SDL_SetRelativeMouseMode(active ? SDL_TRUE : SDL_FALSE);
 }
 
+static void Game_MouseLook_CenterCursor(void)
+{
+    if (SDL_GetMouseState(NULL, NULL) != 0) return;
+
+    // keep centered
+    mouse_pos[0] = GAME_PICTURE_MIDDLE_Y;
+    mouse_pos[1] = GAME_PICTURE_MIDDLE_X;
+}
+
 void Game_MouseLook_Update(void)
 {
     if (!Game_MouseLookEnabled)
@@ -103,6 +115,8 @@ void Game_MouseLook_Update(void)
 #endif
 
     Game_MouseLook_SetActive(Game_ScreenType() == GAME_SCREEN_MAP_3D);
+
+    if (Game_MouseLookActive) Game_MouseLook_CenterCursor();
 }
 
 void Game_MouseLook_Toggle(void)
