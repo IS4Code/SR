@@ -44,6 +44,8 @@ extern void CCALL c_update_timer(CPU);
 
 extern void CCALL c_loc_8B6BB(CPU);
 
+extern void CCALL c_loc_24842(CPU);
+
 extern void CCALL c_RunProcECX(CPU);
 
 #ifdef __cplusplus
@@ -292,6 +294,48 @@ uint32_t CCALL Game_MouseButton(uint32_t state, uint32_t action)
     X86_InterruptFlag = old_InterruptFlag;
 
     return 0;
+}
+
+EXTERNC uint32_t CCALL Game_Share_TriggerSaveGameState(uint16_t saved_game_nr, const char *saved_game_name)
+{
+    _cpu *cpu;
+    uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
+    uint32_t old_InterruptFlag, old_eflags;
+    uint32_t result;
+
+    cpu = x86_initialize_cpu();
+
+    old_eax = eax;
+    old_ecx = ecx;
+    old_edx = edx;
+    old_ebx = ebx;
+    old_ebp = ebp;
+    old_esi = esi;
+    old_edi = edi;
+
+    old_InterruptFlag = X86_InterruptFlag;
+    old_eflags = eflags;
+    eflags = 0x3202;
+
+    eax = (uint32_t) saved_game_nr;
+    edx = PTR2REG(saved_game_name);
+
+    c_loc_24842(cpu);
+
+    result = eax;
+
+    eax = old_eax;
+    ecx = old_ecx;
+    edx = old_edx;
+    ebx = old_ebx;
+    ebp = old_ebp;
+    esi = old_esi;
+    edi = old_edi;
+
+    eflags = old_eflags;
+    X86_InterruptFlag = old_InterruptFlag;
+
+    return result;
 }
 
 EXTERNC uint32_t CCALL Game_RunProcReg1_Asm(void *proc_addr, const char *proc_param1)

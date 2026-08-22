@@ -176,6 +176,10 @@ window.Game_SaveSetupOptions = function (payload) {
     if (eq === -1) return;
     var key = line.substring(0, eq).replace(/^\s+|\s+$/g, '');
     var value = line.substring(eq + 1).replace(/^\s+|\s+$/g, '');
+    if (key === 'SAVED_GAME_NR' && value === '101')
+    {
+      value = '100';
+    }
     if (key) Game_SetCookie('alb_opt_' + key, value);
   });
 };

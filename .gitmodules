@@ -7,3 +7,6 @@
 [submodule "midi-plugins/fluidsynth"]
 	path = midi-plugins/fluidsynth
 	url = https://github.com/FluidSynth/fluidsynth.git
+[submodule "games/Albion/SR-Main/brotli"]
+	path = games/Albion/SR-Main/brotli
+	url = https://github.com/google/brotli.git

@@ -108,7 +108,7 @@ loc_25156,1,;pop ebx|POP ebx|;call SR_Sync|PUSH loc_25157|tcall SR_Sync|endp|pro
 
 loc_22F61,83,;mov eax, 1|mov eax, 1 ; skip cdrom check
 
-loc_25517,7,;mov dword [ebp-8], 1|add tmpadr, ebp, -8|mov tmp1, 1|store tmp1, tmpadr, 4|;cmp dword [Game_ScreenshotEnabled], 0|load tmp1, Game_ScreenshotEnabled, 4|;je loc_25517_end|ctcallz tmp1, loc_25517_2|tcall loc_25517_1|endp|proc loc_25517_1|;cmp dword [eax+12], 0x104|add tmpadr, eax, 12|load tmp1, tmpadr, 1|sub tmp1, tmp1, 0x104|;je loc_255EF|ctcallz tmp1, loc_255EF|tcall loc_25517_2|endp|;loc_25517_end:|proc loc_25517_2 ; screenshot on F4 key
+loc_25517,7,;mov dword [ebp-8], 1|add tmpadr, ebp, -8|mov tmp1, 1|store tmp1, tmpadr, 4|;cmp dword [eax+12], 0x109|add tmpadr, eax, 12|load tmp1, tmpadr, 1|sub tmp1, tmp1, 0x109|ctcallz tmp1, loc_25517_qs|tcall loc_25517_pre2|endp|proc loc_25517_qs ; F9 quicksave, independent of Game_ScreenshotEnabled|call Game_QuickSave_KeyTriggered|tcall loc_25517_pre2|endp|proc loc_25517_pre2|;cmp dword [Game_ScreenshotEnabled], 0|load tmp1, Game_ScreenshotEnabled, 4|;je loc_25517_end|ctcallz tmp1, loc_25517_2|tcall loc_25517_1|endp|proc loc_25517_1|;cmp dword [eax+12], 0x104|add tmpadr, eax, 12|load tmp1, tmpadr, 1|sub tmp1, tmp1, 0x104|;je loc_255EF|ctcallz tmp1, loc_255EF|tcall loc_25517_2|endp|;loc_25517_end:|proc loc_25517_2 ; screenshot on F4 key
 
 loc_255EF,4,;cmp dword [Game_ScreenshotAutomaticFilename], 0|load tmp1, Game_ScreenshotAutomaticFilename, 4|;jne loc_25615_skip|ctcallnz tmp1, loc_25615|tcall loc_255F3|endp|proc loc_255F3|;mov byte [ebp-0x74], 0|add tmpadr, ebp, -0x74|mov tmp1, 0|store8 tmp1, tmpadr, 1; skip getting filename for screenshot
 loc_25615,2,;loc_25615_skip:|;xor eax, eax|mov eax, 0 ; skip getting filename for screenshot

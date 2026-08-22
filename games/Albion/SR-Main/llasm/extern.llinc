@@ -62,6 +62,8 @@ extern Game_UseEnhanced3DEngine
 extern Game_ScreenshotEnabled
 extern Game_ScreenshotAutomaticFilename
 
+funcv Game_QuickSave_KeyTriggered
+
 proc SR_Sync external
 funcv SR_CheckTimer
 

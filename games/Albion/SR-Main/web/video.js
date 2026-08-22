@@ -11,15 +11,29 @@ function ccallSafe(name) {
 
 var Game_StartRequested = false;
 var Game_MainCalled = false;
-function Game_MaybeStartGame() {
+function Game_MaybeStartGame()
+{
   if (!Game_StartRequested || !Game_RuntimeReady || Game_MainCalled) return;
   Game_MainCalled = true;
-  try {
-    if (typeof Game_ApplyBootOverrides === 'function') Game_ApplyBootOverrides();
-  } catch (e) {
-    console.error("Config override failed: " + e);
-  }
-  if (Module.callMain) Module.callMain();
+  (async function () {
+    try
+    {
+      if (typeof Game_ApplyBootOverrides === 'function') Game_ApplyBootOverrides();
+    }
+    catch (e)
+    {
+      console.error("Config override failed: " + e);
+    }
+    try
+    {
+      if (typeof Game_Share_PatchSetup === 'function') Game_Share_PatchSetup();
+    }
+    catch (e)
+    {
+      console.error("Share link config patch failed: " + e);
+    }
+    if (Module.callMain) Module.callMain();
+  })();
 }
 
 function Game_ShowVideoOverlay(url, onFinish, fadeConfig, volume) {
@@ -105,9 +119,20 @@ function Game_PrepareIntro()
   var startOverlay = document.getElementById('start-overlay');
   var btnStart = document.getElementById('btn-start');
   btnStart.focus();
+
+  var introParams = (typeof Game_ParseFragmentParams === 'function') ? Game_ParseFragmentParams() : new URLSearchParams();
+  var skipIntroForShareLink = introParams.has('Save_Data');
+
   btnStart.addEventListener('click', function () {
     Game_StartOverlayActive = false;
     startOverlay.classList.add('hidden');
+    if (skipIntroForShareLink)
+    {
+      document.body.classList.remove('video-blocking');
+      Game_StartRequested = true;
+      setTimeout(Game_MaybeStartGame, 0);
+      return;
+    }
     ccallSafe('Game_WebVideo_Pause');
     Game_ShowVideoOverlay(
       'data/VIDEO/INTRO.MP4',
