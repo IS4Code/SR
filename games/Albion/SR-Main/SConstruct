@@ -316,6 +316,7 @@ elif device == 'web':
     preload_flags = ' '.join('--preload-file data/%s@/%s' % (f, f) for f in data_preloaded_files)
 
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
+               CPPPATH    = ['brotli/c/include'],
                LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web/prerun.js --shell-file web/shell.html -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap","FS","callMain"]',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
@@ -354,7 +355,7 @@ elif device == 'web':
         except OSError:
             pass
 
-        web_static_files = ['style.css', 'controls.js', 'module.js', 'video.js', 'saves.js', 'settings.js']
+        web_static_files = ['style.css', 'controls.js', 'module.js', 'video.js', 'saves.js', 'settings.js', 'share.js']
         for web_static_name in web_static_files:
             web_static_src = os.path.join('web', web_static_name)
             if os.path.isfile(web_static_src):
@@ -430,7 +431,7 @@ audio_objs = SConscript('audio/SConscript', exports='device env')
 input_objs = SConscript('input/SConscript', exports='device env')
 
 # Embed ADLMIDI
-midi_objs = []
+plugin_objs = []
 if device == 'web':
     mp_dir = '../../../midi-plugins'
     adl_dir = mp_dir + '/libADLMIDI'
@@ -455,8 +456,8 @@ if device == 'web':
         'src/chips/nuked_cqm.cpp', 'src/chips/nuked_cqm/cqm.c',
     ]
     for s in adl_sources:
-        midi_objs.append(adl_env.Object('midi_build/' + os.path.splitext(os.path.basename(s))[0], adl_dir + '/' + s))
-    midi_objs.append(adl_env.Object('midi_build/midi-adlmidi', mp_dir + '/midi-adlmidi.c',
+        plugin_objs.append(adl_env.Object('midi_build/' + os.path.splitext(os.path.basename(s))[0], adl_dir + '/' + s))
+    plugin_objs.append(adl_env.Object('midi_build/midi-adlmidi', mp_dir + '/midi-adlmidi.c',
                                      CPPDEFINES = adl_env['CPPDEFINES'] + ['initialize_midi_plugin=initialize_midi_plugin_adlmidi']))
 
     # cmake FluidSynth
@@ -512,9 +513,22 @@ if device == 'web':
     if os.path.isfile(fs_lib_path):
         fs_env = env.Clone()
         fs_env.Append(CPPPATH = [fs_build_dir + '/include', fs_src_dir + '/include', mp_dir])
-        midi_objs.append(fs_env.Object('midi_build/midi-fluidsynth', mp_dir + '/midi-fluidsynth.c',
+        plugin_objs.append(fs_env.Object('midi_build/midi-fluidsynth', mp_dir + '/midi-fluidsynth.c',
                                         CPPDEFINES = ['initialize_midi_plugin=initialize_midi_plugin_fluidsynth']))
         env.Append(LIBS = ['fluidsynth'], LIBPATH = [fs_build_dir + '/src'])
+
+    br_dir = 'brotli'
+    if os.path.isdir(os.path.join(br_dir, 'c')):
+        br_sources = (sorted(str(s) for s in Glob(br_dir + '/c/common/*.c')) +
+                      sorted(str(s) for s in Glob(br_dir + '/c/dec/*.c')) +
+                      sorted(str(s) for s in Glob(br_dir + '/c/enc/*.c')))
+        for s in br_sources:
+            # dec/static_init.c and enc/static_init.c share a basename -- prefix with the parent dir.
+            obj_name = os.path.basename(os.path.dirname(s)) + '_' + os.path.splitext(os.path.basename(s))[0]
+            plugin_objs.append(env.Object('brotli_build/' + obj_name, s))
+    elif not clean:
+        print("\nWarning: brotli/ is missing - Share will only be able to use deflate, not Brotli."
+              " Run 'git submodule update --init games/Albion/SR-Main/brotli' to fetch it.\n")
 
 if llasm_version:
     arch_objs = SConscript('llasm/SConscript', exports='env')
@@ -531,7 +545,7 @@ version_obj = env.Object('Albion-version', 'Albion-version.c')
 env.AlwaysBuild(version_obj)
 version_objs = [version_obj]
 
-program = env.Program(program_name, sources + display_objs + audio_objs + input_objs + arch_objs + midi_objs + version_objs)
+program = env.Program(program_name, sources + display_objs + audio_objs + input_objs + arch_objs + plugin_objs + version_objs)
 if device == 'web':
     env.Depends(program, ['web/prerun.js', 'web/shell.html'])
     if os.path.isfile(fs_lib_path):

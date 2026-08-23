@@ -56,6 +56,7 @@
 #include "Albion-music-midiplugin.h"
 #include "Albion-music-midiplugin2.h"
 #include "Albion-version.h"
+#include "Albion-webshare.h"
 #include "Game_config.h"
 #include "Game_cursor.h"
 #include "Game_memory.h"
@@ -1860,6 +1861,8 @@ int main (int argc, char *argv[])
     Game_Initialize2();
 
     Game_InitBuildInfo();
+
+    Game_Share_LoadFromLink();
 
     Game_Cursor_Hide();
 
