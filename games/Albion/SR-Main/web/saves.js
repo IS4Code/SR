@@ -24,18 +24,25 @@ function crc32(bytes)
 function zu16(v) { return new Uint8Array([v & 0xff, (v >> 8) & 0xff]); }
 function zu32(v) { return new Uint8Array([v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff]); }
 
-function dosDateTime()
+function dosDateTime(d)
 {
-  var d = new Date();
+  if (!d) d = new Date();
   return {
     time: ((d.getHours() & 0x1f) << 11) | ((d.getMinutes() & 0x3f) << 5) | ((d.getSeconds() >> 1) & 0x1f),
     date: (((d.getFullYear() - 1980) & 0x7f) << 9) | (((d.getMonth() + 1) & 0xf) << 5) | (d.getDate() & 0x1f)
   };
 }
 
+function dateFromDos(date, time)
+{
+  return new Date(
+    ((date >> 9) & 0x7f) + 1980, ((date >> 5) & 0xf) - 1, date & 0x1f,
+    (time >> 11) & 0x1f, (time >> 5) & 0x3f, (time & 0x1f) * 2
+  );
+}
+
 async function buildZip(files)
 {
-  var dt = dosDateTime();
   var localParts = [];
   var centralParts = [];
   var offset = 0;
@@ -43,6 +50,7 @@ async function buildZip(files)
   for (var f = 0; f < files.length; f++)
   {
     var file = files[f];
+    var dt = dosDateTime(file.mtime);
     var nameBytes = new TextEncoder().encode(file.name);
     var crc = crc32(file.data);
 
@@ -129,6 +137,8 @@ async function parseZip(arrayBuffer)
   {
     if (u32(pos) !== 0x02014b50) throw new Error("invalid ZIP file (corrupted ZIP central directory)");
     var method = u16(pos + 10);
+    var modTime = u16(pos + 12);
+    var modDate = u16(pos + 14);
     var compSize = u32(pos + 20);
     var nameLen = u16(pos + 28);
     var extraLen = u16(pos + 30);
@@ -136,7 +146,7 @@ async function parseZip(arrayBuffer)
     var localOffset = u32(pos + 42);
     var name = new TextDecoder().decode(bytes.subarray(pos + 46, pos + 46 + nameLen));
 
-    entries.push({ name: name, method: method, compSize: compSize, localOffset: localOffset });
+    entries.push({ name: name, method: method, compSize: compSize, localOffset: localOffset, mtime: dateFromDos(modDate, modTime) });
     pos += 46 + nameLen + extraLen + commentLen;
   }
 
@@ -166,7 +176,7 @@ async function parseZip(arrayBuffer)
       continue;
     }
 
-    result.push({ name: ent.name, data: raw });
+    result.push({ name: ent.name, data: raw, mtime: ent.mtime });
   }
 
   return result;
@@ -218,7 +228,7 @@ async function exportSaves()
     var st;
     try { st = FS.stat(full); } catch (e) { return; }
     if (!FS.isFile(st.mode)) return;
-    files.push({ name: name, data: FS.readFile(full) });
+    files.push({ name: name, data: FS.readFile(full), mtime: st.mtime });
   });
 
   if (files.length === 0)
@@ -280,7 +290,11 @@ async function importSavesFile(file)
   }
 
   eraseDirRecursive(FS, "/SAVES");
-  saves.forEach(function (ent) { FS.writeFile("/SAVES/" + ent.name, ent.data); });
+  saves.forEach(function (ent) {
+    var full = "/SAVES/" + ent.name;
+    FS.writeFile(full, ent.data);
+    if (ent.mtime) FS.utime(full, ent.mtime.getTime(), ent.mtime.getTime());
+  });
 
   FS.syncfs(false, function (err) {
     if (err)
