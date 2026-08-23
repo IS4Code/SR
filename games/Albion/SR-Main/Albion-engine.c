@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-engine.h"
@@ -35,4 +37,20 @@ uint16_t Game_RootScreenType(void)
     }
 
     return GAME_SCREEN_NO_SCREEN;
+}
+
+extern uint16_t loc_153B28; // PARTY_DATA.Year
+extern uint16_t loc_153B2A; // PARTY_DATA.Month
+extern uint16_t loc_153B2C; // PARTY_DATA.Day
+extern uint16_t loc_153B2E; // PARTY_DATA.Hour
+extern uint16_t loc_153B30; // PARTY_DATA.Minute
+
+char *Game_FormatDate(const char *format)
+{
+    int len = snprintf(NULL, 0, format, loc_153B28, loc_153B2A, loc_153B2C, loc_153B2E, loc_153B30);
+    if (len < 0) return NULL;
+
+    char *result = malloc((size_t) len + 1);
+    if (result != NULL) snprintf(result, (size_t) len + 1, format, loc_153B28, loc_153B2A, loc_153B2C, loc_153B2E, loc_153B30);
+    return result;
 }

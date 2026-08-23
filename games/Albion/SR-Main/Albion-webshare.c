@@ -546,7 +546,10 @@ void Game_QuickSave_KeyTriggered(void)
     }
 
     uint16_t slot = is_share ? SHARE_TEMP_SLOT : SHARE_QUICKSAVE_SLOT;
-    if (!Game_Share_TriggerSaveGameState(slot, is_share ? "Sharesave" : "Quicksave"))
+    char *save_name = Game_FormatDate(is_share ? "Sharesave" GAME_CAPTURE_DATE_SUFFIX : "Quicksave" GAME_CAPTURE_DATE_SUFFIX);
+    uint32_t saved = Game_Share_TriggerSaveGameState(slot, save_name);
+    free(save_name);
+    if (!saved)
     {
         MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Saving the game is not currently possible."); });
         if (!ERROR_IsStackEmpty())

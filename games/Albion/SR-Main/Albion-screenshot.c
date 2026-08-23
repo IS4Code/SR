@@ -49,6 +49,7 @@
 #include "Game_defs.h"
 #include "Game_scalerplugin.h"
 #include "Game_vars.h"
+#include "Albion-engine.h"
 #include "Albion-screenshot.h"
 #include "Albion-proc.h"
 #include "Albion-proc-vfs.h"
@@ -1073,7 +1074,7 @@ static void Game_Screenshot_Download(const uint8_t *data, unsigned int length, c
     }, data, length, name, Game_Screenshot_Type());
 }
 
-static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int length)
+static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int length, const char *name)
 {
     MAIN_THREAD_EM_ASM({
         var ptr = $0;
@@ -1082,8 +1083,8 @@ static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int le
         var extension = UTF8ToString($3);
         var bytes = HEAPU8.slice(ptr, ptr + len);
         var blob = new Blob([bytes], { type: type });
-        
-        var caption = "Albion screenshot - " + new Date().toLocaleString();
+
+        var caption = UTF8ToString($4);
 
         function downloadFallback(reason)
         {
@@ -1141,7 +1142,7 @@ static void Game_Screenshot_CopyToClipboard(const uint8_t *data, unsigned int le
         {
             downloadFallback("could not copy to clipboard (" + e + ")");
         }
-    }, data, length, Game_Screenshot_Type(), Game_Screenshot_Extension());
+    }, data, length, Game_Screenshot_Type(), Game_Screenshot_Extension(), name);
 }
 
 static int Game_ScreenshotSavingToClipboard = 0; // used by Game_save_screenshot
@@ -2587,7 +2588,9 @@ void CCALL Game_save_screenshot(const char *filename)
 #if defined(__EMSCRIPTEN__)
     if (Game_ScreenshotSavingToClipboard)
     {
-        Game_Screenshot_CopyToClipboard(buffer, (unsigned int)(curptr - buffer));
+        char *name = Game_FormatDate("Screenshot" GAME_CAPTURE_DATE_SUFFIX);
+        Game_Screenshot_CopyToClipboard(buffer, (unsigned int)(curptr - buffer), name);
+        free(name);
     }
     else
     {
