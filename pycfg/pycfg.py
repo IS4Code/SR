@@ -592,7 +592,7 @@ class ConfigGUI:
 
             self.CreateRadioSet2(vbox, "Screenshot Format:", "Screenshot_Format", None, "Original = original image format (LBM)\nLBM/TGA/BMP = image format is LBM/TGA/BMP\nLBM_pad16 = image format is LBM with lines in file padded to 16 bytes\nPNG = image format is PNG (requires zlib library)")
             self.CreateRadioSet2(vbox, "Screenshot Enhanced Resolution:", "Screenshot_Enhanced_Resolution", None, "Create screenshots in enhanced (when it's possible) or original (360x240) resolution.")
-            self.CreateRadioSet2(vbox, "Screenshot Enabled ?", "Screenshot_Enabled", None, "Select whether making screenshots (using F4 key) is enabled without entering developer mode.")
+            self.CreateRadioSet2(vbox, "Screenshot Enabled ?", "Screenshot_Enabled", None, "Select whether making screenshots (using F8 key) is enabled without entering developer mode.")
             self.CreateRadioSet2(vbox, "Screenshot Automatic Filename ?", "Screenshot_Automatic_Filename", None, "Select whether screenshot filename is generated automatically (Screenshot????.???) or not.")
 
         if self.CfgFile.HasEntry("Keys_WSAD"):

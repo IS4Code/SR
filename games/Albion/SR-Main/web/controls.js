@@ -54,3 +54,16 @@ function showPanel(page)
 Game_Pages.forEach(function (p) {
   if (Game_PageButtons[p]) Game_PageButtons[p].addEventListener('click', function () { showPanel(p); });
 });
+
+(function () {
+  var topbar = document.getElementById('topbar');
+
+  function isOverTopbar(x, y) {
+    var r = topbar.getBoundingClientRect();
+    return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+  }
+
+  window.addEventListener('mousemove', function (e) {
+    document.body.classList.toggle('ui-idle', !isOverTopbar(e.clientX, e.clientY));
+  }, true);
+})();
