@@ -188,57 +188,57 @@ void Game_ProcessKEvents(void)
                     {
                         case SDLK_KP_0:
                             scancode = 0x52;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '0';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '0';
 
                             break;
                         case SDLK_KP_1:
                             scancode = 0x4f;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '1';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '1';
 
                             break;
                         case SDLK_KP_2:
                             scancode = 0x50;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '2';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '2';
 
                             break;
                         case SDLK_KP_3:
                             scancode = 0x51;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '3';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '3';
 
                             break;
                         case SDLK_KP_4:
                             scancode = 0x4b;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '4';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '4';
 
                             break;
                         case SDLK_KP_5:
                             scancode = 0x4c;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '5';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '5';
 
                             break;
                         case SDLK_KP_6:
                             scancode = 0x4d;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '6';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '6';
 
                             break;
                         case SDLK_KP_7:
                             scancode = 0x47;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '7';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '7';
 
                             break;
                         case SDLK_KP_8:
                             scancode = 0x48;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '8';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '8';
 
                             break;
                         case SDLK_KP_9:
                             scancode = 0x49;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '9';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '9';
 
                             break;
                         case SDLK_KP_PERIOD:
                             scancode = 0x53;
-                            if (cevent->key.keysym.mod & KMOD_NUM) ascii_code = '.';
+                            if ((cevent->key.keysym.mod & KMOD_NUM) || Game_InEnteringText) ascii_code = '.';
 
                             break;
                         case SDLK_KP_DIVIDE:
