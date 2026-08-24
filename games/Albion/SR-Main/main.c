@@ -24,6 +24,7 @@
 
 #define _FILE_OFFSET_BITS 64
 #define _TIME_BITS 64
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #if (defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__))
@@ -234,12 +235,18 @@ static void Game_SyncDisplayViewport(void)
 
 static void Game_Display_Create(void)
 {
+    char window_title[32];
+    int version_major, version_minor;
+
     Game_LastViewportOutputWidth = -1;
     Game_LastViewportOutputHeight = -1;
 
+    Game_GetVersion(&version_major, &version_minor);
+    snprintf(window_title, sizeof(window_title), "Albion v%d.%d", version_major, version_minor);
+
     if (Display_Fullscreen && Display_FSType)
     {
-        Game_Window = SDL_CreateWindow("SDL Albion", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_HIDDEN | (Display_MouseLocked ? SDL_WINDOW_INPUT_GRABBED : 0));
+        Game_Window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_HIDDEN | (Display_MouseLocked ? SDL_WINDOW_INPUT_GRABBED : 0));
     }
     else
     {
@@ -258,7 +265,7 @@ static void Game_Display_Create(void)
         flags |= SDL_WINDOW_RESIZABLE;
 #endif
 
-        Game_Window = SDL_CreateWindow("SDL Albion", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, Display_Width, Display_Height, flags);
+        Game_Window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, Display_Width, Display_Height, flags);
     }
 
     if (Game_Window != NULL)

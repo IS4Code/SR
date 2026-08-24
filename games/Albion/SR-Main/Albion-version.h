@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 void Game_SetVersion(int major, int minor);
+void Game_GetVersion(int *major, int *minor);
 void Game_SetBuildDate(const char *date, const char *time);
 void Game_InitBuildInfo(void);
 

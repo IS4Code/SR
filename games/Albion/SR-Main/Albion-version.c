@@ -25,6 +25,12 @@ void Game_SetVersion(int major, int minor)
     Game_VersionMinor = (uint16_t) minor;
 }
 
+void Game_GetVersion(int *major, int *minor)
+{
+    if (major) *major = Game_VersionMajor;
+    if (minor) *minor = Game_VersionMinor;
+}
+
 #if defined(__EMSCRIPTEN__)
 EMSCRIPTEN_KEEPALIVE
 #endif
