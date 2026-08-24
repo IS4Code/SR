@@ -1393,6 +1393,9 @@ static void Game_Event_Loop(void)
         fprintf(stderr, "Error: Unable to start timer thread\n");
         return;
     }
+#if defined(__EMSCRIPTEN__)
+    SDL_DetachThread(TimerThread);
+#endif
 
     FlipThread = SDL_CreateThread(Game_FlipThread, "flip", NULL);
     if (FlipThread == NULL)
@@ -1402,14 +1405,15 @@ static void Game_Event_Loop(void)
         Thread_Exited = 1;
         Thread_Exit = 1;
 
-#if defined(__EMSCRIPTEN__)
-        SDL_DetachThread(TimerThread);
-#else
+#if !defined(__EMSCRIPTEN__)
         SDL_WaitThread(TimerThread, NULL);
 #endif
 
         return;
     }
+#if defined(__EMSCRIPTEN__)
+    SDL_DetachThread(FlipThread);
+#endif
 
     MainThread = SDL_CreateThread(Game_MainThread, "main", NULL);
     if (MainThread == NULL)
@@ -1421,16 +1425,16 @@ static void Game_Event_Loop(void)
 
         SDL_SemPost(Game_FlipSem);
 
-#if defined(__EMSCRIPTEN__)
-        SDL_DetachThread(FlipThread);
-        SDL_DetachThread(TimerThread);
-#else
+#if !defined(__EMSCRIPTEN__)
         SDL_WaitThread(FlipThread, NULL);
         SDL_WaitThread(TimerThread, NULL);
 #endif
 
         return;
     }
+#if defined(__EMSCRIPTEN__)
+    SDL_DetachThread(MainThread);
+#endif
 
     AppMouseFocus = 1;
     AppInputFocus = 1;
@@ -1482,7 +1486,12 @@ void Game_Iterate(void)
 
     if (Thread_Exited)
     {
-        exit(Game_Finalize());
+        static int finalized = 0;
+        if (!finalized)
+        {
+            finalized = 1;
+            exit(Game_Finalize());
+        }
     }
 #else
     NumEvents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
@@ -1620,13 +1629,7 @@ static void Game_HandleEvent(void)
 
             SDL_SemPost(Game_FlipSem);
 
-#if defined(__EMSCRIPTEN__)
-            SDL_DetachThread(FlipThread);
-
-            SDL_DetachThread(MainThread);
-
-            SDL_DetachThread(TimerThread);
-#else
+#if !defined(__EMSCRIPTEN__)
             SDL_WaitThread(FlipThread, NULL);
 
             SDL_WaitThread(MainThread, NULL);
@@ -1748,13 +1751,7 @@ static void Game_HandleEvent(void)
 
                         SDL_SemPost(Game_FlipSem);
 
-#if defined(__EMSCRIPTEN__)
-                        SDL_DetachThread(FlipThread);
-
-                        SDL_DetachThread(MainThread);
-
-                        SDL_DetachThread(TimerThread);
-#else
+#if !defined(__EMSCRIPTEN__)
                         SDL_WaitThread(FlipThread, NULL);
 
                         SDL_WaitThread(MainThread, NULL);

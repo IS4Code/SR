@@ -317,7 +317,7 @@ elif device == 'web':
 
     env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
                CPPPATH    = ['brotli/c/include'],
-               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web/prerun.js --shell-file web/shell.html -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap","FS","callMain"]',
+               LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web/prerun.js --shell-file web/shell.html -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap","FS","callMain"] --profiling-funcs',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
