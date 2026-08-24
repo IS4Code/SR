@@ -31,7 +31,7 @@ var Game_SettingsFields = [
 
 var Game_GodModeField = { key: 'Game_GodMode', label: 'God mode', group: 'game', type: 'onoff', default: 'off' };
 
-var Game_PhoneOnlyOverrides = { Display_MouseCursor: 'none' };
+var Game_PhoneOnlyOverrides = { Display_MouseCursor: 'none', Display_ScalerFactor: '3' };
 
 var Game_LanguageField = {
   key: 'Language', label: 'Game language', group: 'language', type: 'select', default: 'ENGLISH',
