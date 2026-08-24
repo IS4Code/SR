@@ -120,7 +120,7 @@ function Game_PrepareIntro()
 {
   Game_StartOverlayActive = true;
 
-  document.body.classList.add('video-blocking');
+  document.body.classList.add('video-blocking', 'start-pending');
   var startOverlay = document.getElementById('start-overlay');
   var btnStart = document.getElementById('btn-start');
   btnStart.focus();
@@ -130,6 +130,7 @@ function Game_PrepareIntro()
 
   btnStart.addEventListener('click', function () {
     Game_StartOverlayActive = false;
+    document.body.classList.remove('start-pending');
     startOverlay.classList.add('hidden');
     if (skipIntroForShareLink)
     {

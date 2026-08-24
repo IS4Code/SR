@@ -8,6 +8,12 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-game">
+<div id="page-game" class="page">
+<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<video id="video-overlay" playsinline disablepictureinpicture oncontextmenu="event.preventDefault()" tabindex="-1"></video>
+<div id="start-overlay"><button id="btn-start" type="button">▶ Start Albion</button></div>
+</div>
+<div id="ui-container">
 <div id="topbar">
 <div class="buttons">
 <button id="btn-game" class="active" type="button">Game</button>
@@ -27,11 +33,6 @@
 </div>
 </div>
 <section id="pages">
-<div id="page-game" class="page">
-<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-<video id="video-overlay" playsinline disablepictureinpicture oncontextmenu="event.preventDefault()" tabindex="-1"></video>
-<div id="start-overlay"><button id="btn-start" type="button">▶ Start Albion</button></div>
-</div>
 <div id="page-settings" class="page">
 <div id="settings-panel"></div>
 </div>
@@ -39,6 +40,7 @@
 <textarea id="output" rows="8" readonly></textarea>
 </div>
 </section>
+</div>
 <input id="import-saves-input" type="file" accept=".zip,application/zip" style="display: none;">
 <input id="mobile-kbd-trigger" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="-1">
 <script type="text/javascript" src="controls.js"></script>

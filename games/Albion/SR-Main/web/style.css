@@ -22,24 +22,33 @@ body.page-game #page-game,
 body.page-settings #page-settings,
 body.page-log #page-log { display: block; }
 
-#canvas, #output {
+#canvas {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   margin: 0;
+  padding: 0;
   border: 0;
   box-sizing: border-box;
-}
-
-#canvas {
-  padding: 0;
   background: black;
   outline: none;
 }
 
+#pages > .page {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
 #output {
-  padding: 48px 8px 8px;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  box-sizing: border-box;
   background: black;
   color: lightgray;
   font-family: 'Lucida Console', Monaco, monospace;
@@ -49,11 +58,11 @@ body.page-log #page-log { display: block; }
 }
 
 #settings-panel {
-  position: fixed;
-  inset: 0;
+  width: 100%;
+  height: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 48px 16px 16px;
+  padding: 16px;
   background: black;
   color: rgba(255, 217, 76, 0.9);
   font-size: 13px;
@@ -90,6 +99,7 @@ body.page-log #page-log { display: block; }
 .settings-row input {
   flex: 0 0 auto;
   width: 160px;
+  box-sizing: border-box;
   background-color: #241d06;
   color: #ffd94c;
   border: 1px solid rgba(255, 217, 76, 0.3);
@@ -108,18 +118,25 @@ body.page-log #page-log { display: block; }
   opacity: 0.5;
 }
 
-#topbar {
+#ui-container {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 32px;
+  inset: 0;
   z-index: 2;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+#topbar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 8px;
   box-sizing: border-box;
+  min-height: 32px;
   pointer-events: none;
   font-size: 13px;
   color: rgba(255, 217, 76, 0.85);
@@ -128,20 +145,18 @@ body.page-log #page-log { display: block; }
   transition: opacity 0.25s ease;
 }
 
-body.page-game.ui-idle #topbar {
+body.page-game.ui-idle:not(.start-pending) #topbar {
   opacity: 0;
-  transition: opacity 1.2s ease;
+  transition: opacity 1.2s ease 2s;
 }
 
 body.is-phone.page-game.ui-idle #topbar {
   opacity: 1;
 }
 
-#topbar .buttons {
-  pointer-events: auto;
-  display: flex;
-  gap: 4px;
-  justify-self: start;
+#topbar .buttons,
+#topbar .end-group {
+  display: contents;
 }
 
 #topbar button {
@@ -162,8 +177,10 @@ body.is-phone.page-game.ui-idle #topbar {
 
 #btn-export-saves { margin-left: 8px; }
 
-.phone-only { display: none; }
-body.is-phone .phone-only { display: inline-block; }
+#btn-fullscreen { margin-left: auto; }
+
+#topbar .phone-only { display: none; }
+body.is-phone #topbar .phone-only { display: inline-block; }
 
 #mobile-kbd-trigger {
   position: fixed;
@@ -178,17 +195,12 @@ body.is-phone .phone-only { display: inline-block; }
 }
 
 #status-text {
-  justify-self: center;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   opacity: 0.85;
   white-space: nowrap;
-}
-
-.end-group {
-  pointer-events: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-self: end;
 }
 
 #credits {
@@ -197,25 +209,41 @@ body.is-phone .phone-only { display: inline-block; }
 }
 
 body.video-blocking #btn-export-saves,
-body.video-blocking #btn-import-saves {
+body.video-blocking #btn-import-saves,
+body.video-blocking #btn-mobile-menu,
+body.video-blocking #btn-mobile-map,
+body.video-blocking #btn-mobile-selection {
   pointer-events: none;
   opacity: 0.4;
 }
 
+#pages {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
 @media (min-aspect-ratio: 3/2) {
-  #topbar {
-    right: auto;
-    bottom: 0;
-    height: auto;
-    grid-template-columns: none;
-    grid-template-rows: auto 1fr auto;
-    gap: 8px;
+  #ui-container {
+    flex-direction: row;
   }
 
-  #topbar .buttons {
+  #topbar {
     flex-direction: column;
-    justify-self: start;
-    align-self: start;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  #topbar button {
+    display: block;
+    width: 100%;
+  }
+
+  #btn-fullscreen {
+    margin-left: 0;
+    margin-top: auto;
   }
 
   #btn-export-saves {
@@ -224,17 +252,19 @@ body.video-blocking #btn-import-saves {
   }
 
   #status-text {
-    justify-self: start;
-    align-self: center;
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 100%;
+    transform: translateY(-50%);
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-align: center;
   }
 
-  .end-group {
-    flex-direction: column;
-    justify-self: start;
-    align-self: end;
+  #credits {
+    text-align: center;
   }
-
-  #output, #settings-panel { padding-top: 8px; }
 }
 
 #video-overlay {
