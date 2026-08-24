@@ -26,7 +26,7 @@ var Game_SettingsFields = [
   { key: 'Mouse_Look', label: 'Mouse look', group: 'mouse', type: 'yesno', default: 'yes', phoneDefault: 'no' },
   { key: 'Mouse_LookSensitivity', label: 'Mouse look sensitivity (%)', group: 'mouse', type: 'number', default: '100', min: 1 },
 
-  { key: 'Game_PopupDelay', label: 'Pop-up accept delay (ticks)', group: 'game', type: 'number', default: '40', min: 0 },
+  { key: 'Game_PopupDelay', label: 'Pop-up accept delay (ticks)', group: 'game', type: 'number', default: '10', min: 0 },
 ];
 
 var Game_GodModeField = { key: 'Game_GodMode', label: 'God mode', group: 'game', type: 'onoff', default: 'off' };
