@@ -358,6 +358,22 @@ void Game_ReadConfig(void)
                     Game_MouseCursor = 3;
                 }
             }
+            else if ( strcasecmp(str, "MouseCursorScale") == 0 ) // str equals "MouseCursorScale"
+            {
+                if ( strcasecmp(param, "auto") == 0 ) // param equals "auto"
+                {
+                    Game_MouseCursorScale = 0;
+                }
+                else
+                {
+                    num_int = 0;
+                    sscanf(param, "%i", &num_int);
+                    if (num_int >= 1)
+                    {
+                        Game_MouseCursorScale = num_int;
+                    }
+                }
+            }
             else if ( strcasecmp(str, "Scaling") == 0 ) // str equals "Scaling"
             {
                 if ( strcasecmp(param, "basicnb") == 0 ) // param equals "basicnb"

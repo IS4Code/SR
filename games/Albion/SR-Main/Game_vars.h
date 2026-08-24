@@ -71,6 +71,7 @@ EXTERNAL_VARIABLE int Game_MouseCursor;				/* mouse cursor type in window
                                                        1: minimal
                                                        2: none
                                                        3: game */
+EXTERNAL_VARIABLE int Game_MouseCursorScale;		/* game cursor image scale, 0: automatic */
 EXTERNAL_VARIABLE int Game_PlayIntro;				/* play intro on start ? */
 EXTERNAL_VARIABLE int Game_SwitchWSAD;				/* switch WSAD keys for arrow keys ? */
 EXTERNAL_VARIABLE int Game_SwitchArrowKeys;			/* switch arrow keys for WSAD keys ? */

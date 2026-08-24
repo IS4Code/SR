@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <SDL.h>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #pragma pack(1)
 typedef struct PACKED {
     uint16_t hotspot_x;
@@ -21,7 +25,7 @@ extern Game_CursorEntry loc_137BCC[]; // cursor entries
 
 #define GAME_CURSOR_STACK_MAX 8
 #define GAME_CURSOR_COUNT 27
-#define GAME_CURSOR_SCALE 2
+#define GAME_CURSOR_DEFAULT_SCALE 2
 
 static SDL_Cursor *Game_SDL_Cursors[GAME_CURSOR_COUNT];
 static Game_CursorEntry Game_Cursor_Original[GAME_CURSOR_COUNT];
@@ -30,7 +34,42 @@ static int Game_Cursor_Hidden = 0;
 static int Game_Cursor_Loaded = 0;
 static int Game_Cursor_LastIndex = -1;
 
-static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry)
+#if defined(__EMSCRIPTEN__)
+static int Game_Cursor_AutoScale(void)
+{
+    int scale = MAIN_THREAD_EM_ASM_INT({
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        if (w * 2 > h * 3)
+        {
+            w = h * 3 / 2;
+        }
+        else
+        {
+            h = w * 2 / 3;
+        }
+        return Math.round(w / 360);
+    });
+
+    return (scale < 1) ? 1 : scale;
+}
+#endif
+
+static int Game_Cursor_GetScale(void)
+{
+    if (Game_MouseCursorScale != 0)
+    {
+        return Game_MouseCursorScale;
+    }
+
+#if defined(__EMSCRIPTEN__)
+    return Game_Cursor_AutoScale();
+#else
+    return GAME_CURSOR_DEFAULT_SCALE;
+#endif
+}
+
+static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry, int scale)
 {
     int width = entry->width, height = entry->height;
     if (!entry->sprite || !width || !height || width > 64 || height > 64)
@@ -38,14 +77,14 @@ static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry)
         return NULL;
     }
 
-    int count = width * height * (GAME_CURSOR_SCALE * GAME_CURSOR_SCALE);
+    int count = width * height * (scale * scale);
     uint32_t *pixels = (uint32_t *) malloc(count * sizeof(uint32_t));
     if (pixels == NULL)
     {
         return NULL;
     }
 
-    int dst_stride = width * GAME_CURSOR_SCALE;
+    int dst_stride = width * scale;
     for (int y = 0; y < height; y++)
     {
         uint8_t *src_row = &entry->sprite[y * entry->width];
@@ -62,11 +101,11 @@ static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry)
                 | ((uint32_t)col.s.r);
 
             // set the destination scaled pixel
-            uint32_t *dst = &pixels[(y * dst_stride + x) * GAME_CURSOR_SCALE];
-            for (int dy = 0; dy < GAME_CURSOR_SCALE; dy++)
+            uint32_t *dst = &pixels[(y * dst_stride + x) * scale];
+            for (int dy = 0; dy < scale; dy++)
             {
                 uint32_t *dst_row = &dst[dy * dst_stride];
-                for (int dx = 0; dx < GAME_CURSOR_SCALE; dx++)
+                for (int dx = 0; dx < scale; dx++)
                 {
                     dst_row[dx] = pixel;
                 }
@@ -75,14 +114,14 @@ static SDL_Cursor *Game_Cursor_Render(const Game_CursorEntry *entry)
     }
 
     SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(
-        pixels, width * GAME_CURSOR_SCALE, height * GAME_CURSOR_SCALE, 32,
+        pixels, width * scale, height * scale, 32,
         dst_stride * sizeof(uint32_t), 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000
     );
 
     SDL_Cursor* cursor = NULL;
     if (surface)
     {
-        cursor = SDL_CreateColorCursor(surface, entry->hotspot_x * GAME_CURSOR_SCALE, entry->hotspot_y * GAME_CURSOR_SCALE);
+        cursor = SDL_CreateColorCursor(surface, entry->hotspot_x * scale, entry->hotspot_y * scale);
         SDL_FreeSurface(surface);
     }
 
@@ -124,10 +163,12 @@ static void Game_Cursor_Load(void)
     // hide first just in case
     Game_Cursor_Hide();
 
+    int scale = Game_Cursor_GetScale();
+
     for (int i = 0; i < GAME_CURSOR_COUNT; i++)
     {
         // render to SDL cursor from the original sprite
-        Game_SDL_Cursors[i] = Game_Cursor_Render(&Game_Cursor_Original[i]);
+        Game_SDL_Cursors[i] = Game_Cursor_Render(&Game_Cursor_Original[i], scale);
     }
 
     Game_Cursor_Loaded = 1;

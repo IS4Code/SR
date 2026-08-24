@@ -991,6 +991,7 @@ static int Game_Initialize(void)
 #else
     Game_MouseCursor = 0;
 #endif
+    Game_MouseCursorScale = 0;
     Game_MouseLookEnabled = 0;
     Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;

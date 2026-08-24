@@ -21,6 +21,7 @@ var Game_SettingsFields = [
   { key: 'Display_ScaledHeight', label: 'Window height', group: 'display', type: 'number', default: '720', min: 240 },
   { key: 'Display_FieldOfView', label: 'Field of view (degrees)', group: 'display', type: 'number', default: '78.19', min: 1, max: 179, step: 0.01 },
   { key: 'Display_PitchFovCompensation', label: 'Pitch FOV compensation', group: 'display', type: 'onoff', default: 'on' },
+  { key: 'Display_MouseCursorScale', label: 'Mouse cursor scale (0 = auto)', group: 'display', type: 'number', default: '0', min: 0 },
 
   { key: 'Mouse_Look', label: 'Mouse look', group: 'mouse', type: 'yesno', default: 'yes', phoneDefault: 'no' },
   { key: 'Mouse_LookSensitivity', label: 'Mouse look sensitivity (%)', group: 'mouse', type: 'number', default: '100', min: 1 },
