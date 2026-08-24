@@ -10,7 +10,6 @@
 #include "Game_defs.h"
 #include "Albion-webshare.h"
 #include "Albion-engine.h"
-#include "Albion-BBERROR.h"
 #include "virtualfs.h"
 
 #if defined(__EMSCRIPTEN__)
@@ -552,10 +551,6 @@ void Game_QuickSave_KeyTriggered(void)
     if (!saved)
     {
         MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Saving the game is not currently possible."); });
-        if (!ERROR_IsStackEmpty())
-        {
-            ERROR_PrintAllErrors(0x3F);
-        }
         return;
     }
 

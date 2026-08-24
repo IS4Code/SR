@@ -30,6 +30,10 @@
 #include "Game_thread.h"
 #include "Game-int2.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "Albion-BBERROR.h"
+#endif
+
 uint32_t CCALL Game_int386x(
     const uint32_t IntNum,
     const Game_REGS *in_regs,
@@ -234,6 +238,11 @@ uint32_t CCALL Game_int386x(
                         EAX = 0x004f;	// VESA OK
 
                         /*memcpy(&(Game_FrameBuffer[Game_ScreenWindowNum << 16]), Game_ScreenWindow, (Game_ScreenWindowNum == 2)?41728:65536);*/
+
+#if defined(__EMSCRIPTEN__)
+                        // log unhandled errors from last frame
+                        ERROR_PrintAllErrors(0x01 | 0x02 | 0x20);
+#endif
 
                         event.type = SDL_USEREVENT;
                         event.user.code = EC_DISPLAY_FLIP_START;

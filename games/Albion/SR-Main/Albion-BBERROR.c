@@ -26,6 +26,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
+
+#define BBERROR_MAXERRORSONSTACK 20
 
 typedef struct {
     ERROR_PrintErrorPtr PrintError;
@@ -35,7 +41,7 @@ typedef struct {
     uint8_t data[16];
 } ERROR_ErrorStruct;
 
-static ERROR_ErrorStruct ERROR_errors[20];
+static ERROR_ErrorStruct ERROR_errors[BBERROR_MAXERRORSONSTACK];
 static char ERROR_string_buffer[400];
 static ERROR_OutputFuncPtr ERROR_OutputFunc;
 
@@ -55,6 +61,10 @@ extern uint32_t CCALL Game_RunProcReg2_Asm(void *proc_addr, const char *proc_par
 
 static void ERROR_SetOutputFuncPtr(ERROR_OutputFuncPtr output_func_ptr);
 static void BBERROR_LocalPrintError(char *buffer, const uint8_t *data);
+
+#if defined(__EMSCRIPTEN__)
+static void ERROR_WebOutputLine(const char *message);
+#endif
 
 void CCALL ERROR_Init(ERROR_OutputFuncPtr output_func_ptr)
 {
@@ -76,7 +86,7 @@ int32_t CCALL ERROR_PushError(ERROR_PrintErrorPtr error_print_error_ptr, const c
 {
     int data_index;
 
-    if (ERROR_num_errors == 20)
+    if (ERROR_num_errors == BBERROR_MAXERRORSONSTACK)
     {
         ERROR_num_errors--;
         ERROR_PushError(BBERROR_LocalPrintError, "BBERROR Library", (int32_t)strlen("STACK FULL") + 1, (const uint8_t *) "STACK FULL");
@@ -108,7 +118,7 @@ int32_t CCALL ERROR_PushErrorDOS(ERROR_PrintErrorPtr error_print_error_ptr, cons
 {
     int data_index;
 
-    if (ERROR_num_errors == 20)
+    if (ERROR_num_errors == BBERROR_MAXERRORSONSTACK)
     {
         ERROR_num_errors--;
         ERROR_PushError(BBERROR_LocalPrintError, "BBERROR Library", (int32_t)strlen("STACK FULL") + 1, (const uint8_t *) "STACK FULL");
@@ -157,12 +167,14 @@ void CCALL ERROR_PrintAllErrors(uint32_t flags)
 
     if ((flags & 0x20) && (flags & 0x08))
     {
+#if !defined(__EMSCRIPTEN__)
         if (ERROR_OutputFunc != NULL)
         {
             //ERROR_OutputFunc("BBERROR: ERRORSTACK START:--------------\n");
             // todo: remove
             Game_RunProcReg1_Asm((void *)ERROR_OutputFunc, "BBERROR: ERRORSTACK START:--------------\n");
         }
+#endif
     }
 
     for (index = 0; index < ERROR_num_errors; index++)
@@ -202,23 +214,29 @@ void CCALL ERROR_PrintAllErrors(uint32_t flags)
 
         if (flags & 0x20)
         {
+#if defined(__EMSCRIPTEN__)
+            ERROR_WebOutputLine(ERROR_string_buffer);
+#else
             if (ERROR_OutputFunc != NULL)
             {
                 //ERROR_OutputFunc(ERROR_string_buffer);
                 // todo: remove
                 Game_RunProcReg1_Asm((void *)ERROR_OutputFunc, ERROR_string_buffer);
             }
+#endif
         }
     }
 
     if ((flags & 0x20) && (flags & 0x10))
     {
+#if !defined(__EMSCRIPTEN__)
         if (ERROR_OutputFunc != NULL)
         {
             //ERROR_OutputFunc("BBERROR: ERRORSTACK END-----------------\n");
             // todo: remove
             Game_RunProcReg1_Asm((void *)ERROR_OutputFunc, "BBERROR: ERRORSTACK END-----------------\n");
         }
+#endif
     }
 
     ERROR_num_errors = 0;
@@ -228,4 +246,31 @@ static void BBERROR_LocalPrintError(char *buffer, const uint8_t *data)
 {
     sprintf(buffer, "INTERNAL ERROR: %s", (const char *)data);
 }
+
+#if defined(__EMSCRIPTEN__)
+static int ERROR_web_reports = 0;
+static int ERROR_web_disabled = 0;
+
+static void ERROR_WebOutputLine(const char *message)
+{
+    char line[sizeof(ERROR_string_buffer) + 64];
+
+    if (ERROR_web_disabled) return;
+
+    ERROR_web_reports++;
+
+    if (ERROR_web_reports > BBERROR_MAXERRORSONSTACK)
+    {
+        ERROR_web_disabled = 1;
+        snprintf(line, sizeof(line), "%s Further errors will be disabled.", message);
+        message = line;
+    }
+
+    MAIN_THREAD_EM_ASM({
+        var text = UTF8ToString($0);
+        if (Module.print) Module.print(text);
+        if (typeof showPanel === 'function') showPanel(true);
+    }, message);
+}
+#endif
 
