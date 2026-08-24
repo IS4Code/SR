@@ -57,6 +57,7 @@
 #include "Albion-music-midiplugin2.h"
 #include "Albion-version.h"
 #include "Albion-webshare.h"
+#include "Albion-mobile.h"
 #include "Game_config.h"
 #include "Game_cursor.h"
 #include "Game_memory.h"
@@ -994,6 +995,10 @@ static int Game_Initialize(void)
     Game_MouseLookSensitivity = 100;
     Game_PlayIntro = 1;
 
+    Game_DeveloperMode = 0;
+    Game_GodMode = 0;
+    Game_PopupDelay = 40; // matches the original TEXT_DELAY constant
+
     Game_InEnteringText = 0;
     Game_InKeywords = 0;
     Game_InMenuOptions = 0;
@@ -1855,6 +1860,7 @@ int main (int argc, char *argv[])
     }
 
     Game_ReadConfig();
+    Game_ApplyDeveloperGodMode();
     Game_ReadCDPath();
     Game_ReadFontData();
 

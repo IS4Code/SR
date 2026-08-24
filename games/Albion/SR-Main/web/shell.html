@@ -18,7 +18,13 @@
 <button id="btn-import-saves" type="button">Import saves</button>
 </div>
 <div id="status-text"></div>
+<div class="end-group">
+<button id="btn-fullscreen" type="button">Fullscreen</button>
+<button id="btn-mobile-menu" class="phone-only" type="button">Menu/Back</button>
+<button id="btn-mobile-map" class="phone-only" type="button">Map</button>
+<button id="btn-mobile-selection" class="phone-only" type="button">Selection mode</button>
 <div id="credits"><a href="https://github.com/IS4Code/Albion">Made by IS4</a></div>
+</div>
 </div>
 <section id="pages">
 <div id="page-game" class="page">
@@ -34,7 +40,9 @@
 </div>
 </section>
 <input id="import-saves-input" type="file" accept=".zip,application/zip" style="display: none;">
+<input id="mobile-kbd-trigger" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="-1">
 <script type="text/javascript" src="controls.js"></script>
+<script type="text/javascript" src="mobile.js"></script>
 <script type="text/javascript" src="settings.js"></script>
 <script type="text/javascript" src="module.js"></script>
 <script type="text/javascript" src="video.js"></script>

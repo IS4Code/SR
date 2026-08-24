@@ -355,7 +355,7 @@ elif device == 'web':
         except OSError:
             pass
 
-        web_static_files = ['style.css', 'controls.js', 'module.js', 'video.js', 'saves.js', 'settings.js', 'share.js']
+        web_static_files = ['style.css', 'controls.js', 'module.js', 'video.js', 'saves.js', 'settings.js', 'share.js', 'mobile.js']
         for web_static_name in web_static_files:
             web_static_src = os.path.join('web', web_static_name)
             if os.path.isfile(web_static_src):

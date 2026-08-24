@@ -126,6 +126,8 @@ loc_4468A,2,;mov dword [Game_InKeywords], 0|mov tmp1, 0|store tmp1, Game_InKeywo
 loc_33DE8,2,;mov ebp, esp|mov ebp, esp|;mov dword [Game_InMenuOptions], 1|mov tmp1, 1|store tmp1, Game_InMenuOptions, 4 ; menu options window - begin
 loc_33E6C,2,;mov dword [Game_InMenuOptions], 0|mov tmp1, 0|store tmp1, Game_InMenuOptions, 4|;mov esp, ebp|mov esp, ebp ; menu options window - end
 
+loc_95B98,5,;mov eax, 0x28|load eax, Game_PopupDelay, 4 ; Display_processed_text: TEXT_DELAY -> Game_PopupDelay (pop-up accept delay)
+
 loc_8151C,2454, ; AIL code 1
 loc_81EB2,183, ; CLIB code 1
 

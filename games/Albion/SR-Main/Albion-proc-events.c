@@ -28,10 +28,15 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Albion-engine.h"
+#include "Albion-mobile.h"
 #include "Albion-mouse.h"
 #include "Albion-proc-events.h"
 #include "Albion-screenshot.h"
 #include "input.h"
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
 
 int Game_MovementEnabled(void)
 {
@@ -48,33 +53,61 @@ static int Game_SwitchCtrl(void)
 #endif
 }
 
+// scancode for each already-resolved ASCII character (0 = none); shared with Game_InjectChar below
+const static uint8_t scancode_table[128] = {
+       0,    0,    0,    0,    0,    0,    0,    0, 0x0e, 0x0f,    0,    0,    0, 0x1c,    0,    0, /*   0- 15 */
+       0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0x01,    0,    0,    0,    0, /*  16- 31 */
+    0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28, 0x0a, 0x0b, 0x09, 0x0d, 0x33, 0x0c, 0x34, 0x35, /*  32- 47 */
+    0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x27, 0x27, 0x33, 0x0d, 0x34, 0x35, /*  48- 63 */
+    0x03, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  64- 79 */
+    0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x07, 0x0c, /*  80- 95 */
+    0x29, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  96-111 */
+    0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x29, 0x53, /* 112-127 */
+};
+
+// BIOS scancode for each raw driver scancode above
+const static uint8_t bios_scancode_table[128] = {
+       0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, /*   0- 15 */
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, /*  16- 31 */
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, /*  32- 47 */
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, /*  48- 63 */
+    0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  64- 79 */
+    0x50, 0x51, 0x52, 0x53,    0,    0,    0, 0x85, 0x86,    0,    0, 0xec, 0xed, 0xee,    0,    0, /*  80- 95 */
+       0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, /*  96-111 */
+       0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, /* 112-127 */
+};
+
+#if defined(__EMSCRIPTEN__)
+// bypasses Game_EventKQueue/AppInputFocus (Game_HandleEvent, main.c) - the
+// mobile keyboard's hidden input, not the canvas, holds focus while typing,
+// so a normal injected SDL_KEYDOWN would be silently dropped there
+EMSCRIPTEN_KEEPALIVE
+void Game_InjectChar(int ascii_code)
+{
+    uint32_t scancode, key_code;
+
+    if (ascii_code < 0 || ascii_code >= 128) return;
+
+    scancode = scancode_table[ascii_code];
+    if (scancode == 0) return;
+
+    key_code = (scancode << 24) | (bios_scancode_table[scancode & 0x7f] << 8) | (uint32_t) ascii_code;
+
+    if ( ( (Game_KBufferWrite + 1) & (GAME_KBUFFER_LENGTH - 1) ) == Game_KBufferRead )
+    {
+        return; // buffer full, drop
+    }
+
+    Game_KBuffer[Game_KBufferWrite] = key_code;
+    Game_KBufferWrite = (Game_KBufferWrite + 1) & (GAME_KBUFFER_LENGTH - 1);
+}
+#endif
+
 void Game_ProcessKEvents(void)
 {
     int finish;
     uint32_t VSyncTick, key_code, ascii_code, scancode;
     SDL_Event *cevent;
-
-    const static uint8_t scancode_table[128] = {
-           0,    0,    0,    0,    0,    0,    0,    0, 0x0e, 0x0f,    0,    0,    0, 0x1c,    0,    0, /*   0- 15 */
-           0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0x01,    0,    0,    0,    0, /*  16- 31 */
-        0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28, 0x0a, 0x0b, 0x09, 0x0d, 0x33, 0x0c, 0x34, 0x35, /*  32- 47 */
-        0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x27, 0x27, 0x33, 0x0d, 0x34, 0x35, /*  48- 63 */
-        0x03, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  64- 79 */
-        0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x07, 0x0c, /*  80- 95 */
-        0x29, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, /*  96-111 */
-        0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c, 0x1a, 0x2b, 0x1b, 0x29, 0x53, /* 112-127 */
-    };
-
-    const static uint8_t bios_scancode_table[128] = {
-           0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, /*   0- 15 */
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, /*  16- 31 */
-        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, /*  32- 47 */
-        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, /*  48- 63 */
-        0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, /*  64- 79 */
-        0x50, 0x51, 0x52, 0x53,    0,    0,    0, 0x85, 0x86,    0,    0, 0xec, 0xed, 0xee,    0,    0, /*  80- 95 */
-           0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, /*  96-111 */
-           0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, /* 112-127 */
-    };
 
     const static uint8_t ascii_shift_table[128] = {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, /*   0- 15 */
@@ -103,6 +136,17 @@ void Game_ProcessKEvents(void)
         {
             case SDL_KEYDOWN:
             case SDL_KEYUP:
+                if ((cevent->key.keysym.sym == SDLK_ESCAPE) && (Game_ScreenType() == GAME_SCREEN_NO_SCREEN))
+                {
+                    // no screen open - Escape closes a stray popup via a right-click at the origin
+                    if ((cevent->type == SDL_KEYDOWN) && !cevent->key.repeat)
+                    {
+                        Game_InjectClick(SDL_BUTTON_RIGHT, 0, 0);
+                    }
+
+                    goto _after_switch1;
+                }
+
                 if ((cevent->type == SDL_KEYDOWN) && !cevent->key.repeat && (cevent->key.keysym.sym == SDLK_F12) &&
                     !(cevent->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT | KMOD_GUI)))
                 {
@@ -650,6 +694,7 @@ int Game_ProcessMEvents(void)
     finish = 0;
 
     Game_MouseLook_Update();
+    Game_MobileKeyboard_Poll();
 
     while (!finish && Game_MQueueWrite != Game_MQueueRead)
     {
@@ -764,21 +809,43 @@ int Game_ProcessMEvents(void)
                     }
                 }
 
-                if (cevent->button.button == SDL_BUTTON_LEFT ||
-                    cevent->button.button == SDL_BUTTON_RIGHT)
                 {
-                    int XPosDiff, YPosDiff;
-                    uint32_t ret;
+                    // decided once on button-down and kept for the matching button-up, so a
+                    // screen change mid-click can't send Game_MouseButton a mismatched pair
+                    static int selection_swap_active = 0;
+                    Uint8 effective_button = cevent->button.button;
 
-                    ret = Game_MouseButton(0 /*SDL_GetMouseState(NULL, NULL)*/, ((cevent->button.state == SDL_PRESSED)?1:2) + ((cevent->button.button == SDL_BUTTON_LEFT)?0:2));
-
-                    if ((Display_MouseLocked || Display_Fullscreen) && !ret)
+                    if (effective_button == SDL_BUTTON_LEFT)
                     {
-                        Game_CompareMPosition(cevent->button.x, cevent->button.y, &XPosDiff, &YPosDiff);
-
-                        if (XPosDiff || YPosDiff)
+                        if (cevent->type == SDL_MOUSEBUTTONDOWN)
                         {
-                            Game_RepositionMouse();
+                            selection_swap_active = Game_SelectionMode &&
+                                ((Game_ScreenType() == GAME_SCREEN_MAP_2D) || (Game_ScreenType() == GAME_SCREEN_MAP_3D));
+                        }
+
+                        if (selection_swap_active)
+                        {
+                            // selection mode: a left click acts as a right click, gameplay screens only
+                            effective_button = SDL_BUTTON_RIGHT;
+                        }
+                    }
+
+                    if (effective_button == SDL_BUTTON_LEFT ||
+                        effective_button == SDL_BUTTON_RIGHT)
+                    {
+                        int XPosDiff, YPosDiff;
+                        uint32_t ret;
+
+                        ret = Game_MouseButton(0 /*SDL_GetMouseState(NULL, NULL)*/, ((cevent->button.state == SDL_PRESSED)?1:2) + ((effective_button == SDL_BUTTON_LEFT)?0:2));
+
+                        if ((Display_MouseLocked || Display_Fullscreen) && !ret)
+                        {
+                            Game_CompareMPosition(cevent->button.x, cevent->button.y, &XPosDiff, &YPosDiff);
+
+                            if (XPosDiff || YPosDiff)
+                            {
+                                Game_RepositionMouse();
+                            }
                         }
                     }
                 }

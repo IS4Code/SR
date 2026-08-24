@@ -77,6 +77,10 @@ EXTERNAL_VARIABLE int Game_SwitchArrowKeys;			/* switch arrow keys for WSAD keys
 EXTERNAL_VARIABLE int Game_MouseLookEnabled;		/* enable mouse look ? */
 EXTERNAL_VARIABLE int Game_MouseLookSensitivity;	/* enable mouselook sensitivity */
 
+EXTERNAL_VARIABLE uint32_t Game_DeveloperMode;		/* enable cheat/diagnostic keys on launch ? (boot-only, applied once) */
+EXTERNAL_VARIABLE uint32_t Game_GodMode;			/* also enable god (cheat) mode on launch ? (boot-only, applied once) */
+EXTERNAL_VARIABLE uint32_t Game_PopupDelay;			/* pop-up accept delay, in ticks */
+
 EXTERNAL_CVAR_BGN uint32_t Game_InEnteringText;		/* in entering text window */ EXTERNAL_CVAR_END
 EXTERNAL_CVAR_BGN uint32_t Game_InKeywords;			/* in keywords window */ EXTERNAL_CVAR_END
 EXTERNAL_CVAR_BGN uint32_t Game_InMenuOptions;		/* in menu options window */ EXTERNAL_CVAR_END

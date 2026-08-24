@@ -133,6 +133,10 @@ body.page-game.ui-idle #topbar {
   transition: opacity 1.2s ease;
 }
 
+body.is-phone.page-game.ui-idle #topbar {
+  opacity: 1;
+}
+
 #topbar .buttons {
   pointer-events: auto;
   display: flex;
@@ -158,16 +162,38 @@ body.page-game.ui-idle #topbar {
 
 #btn-export-saves { margin-left: 8px; }
 
+.phone-only { display: none; }
+body.is-phone .phone-only { display: inline-block; }
+
+#mobile-kbd-trigger {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
 #status-text {
   justify-self: center;
   opacity: 0.85;
   white-space: nowrap;
 }
 
+.end-group {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
 #credits {
   pointer-events: auto;
   opacity: 0.8;
-  justify-self: end;
 }
 
 body.video-blocking #btn-export-saves,
@@ -202,7 +228,8 @@ body.video-blocking #btn-import-saves {
     align-self: center;
   }
 
-  #credits {
+  .end-group {
+    flex-direction: column;
     justify-self: start;
     align-self: end;
   }
