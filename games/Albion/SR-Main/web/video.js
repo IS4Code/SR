@@ -3,6 +3,11 @@ Game_VideoOverlayActive = false;
 Game_VideoOverlayFinish = null;
 Game_RuntimeReady = false;
 
+videoOverlay.addEventListener('dblclick', function (e) {
+  e.preventDefault();
+  if (Game_VideoOverlayActive && Game_VideoOverlayFinish) Game_VideoOverlayFinish();
+});
+
 function ccallSafe(name) {
   if (Game_RuntimeReady && Module.ccall) {
     try { Module.ccall(name, null, [], []); } catch (e) {}

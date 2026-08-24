@@ -588,6 +588,44 @@ void Game_ReadConfig(void)
                 }
             }
         }
+        else if ( strncasecmp(str, "Game_", 5) == 0 ) // str begins with "Game_"
+        {
+            // game tweak settings
+
+            str += 5;
+
+            if ( strcasecmp(str, "DeveloperMode") == 0 ) // str equals "DeveloperMode"
+            {
+                if ( strcasecmp(param, "on") == 0 ) // param equals "on"
+                {
+                    Game_DeveloperMode = 1;
+                }
+                else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
+                {
+                    Game_DeveloperMode = 0;
+                }
+            }
+            else if ( strcasecmp(str, "GodMode") == 0 ) // str equals "GodMode"
+            {
+                if ( strcasecmp(param, "on") == 0 ) // param equals "on"
+                {
+                    Game_GodMode = 1;
+                }
+                else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
+                {
+                    Game_GodMode = 0;
+                }
+            }
+            else if ( strcasecmp(str, "PopupDelay") == 0 ) // str equals "PopupDelay"
+            {
+                num_int = 0;
+                sscanf(param, "%i", &num_int);
+                if (num_int >= 0)
+                {
+                    Game_PopupDelay = (uint32_t) num_int;
+                }
+            }
+        }
 
     }
 

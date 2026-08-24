@@ -27,6 +27,7 @@ extern Game_InMenuOptions
 extern Game_Sound
 extern Game_Music
 extern Game_VSyncTick
+extern Game_PopupDelay
 extern Game_stdin
 extern Game_stdout
 extern Game_stderr

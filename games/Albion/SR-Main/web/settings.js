@@ -22,9 +22,15 @@ var Game_SettingsFields = [
   { key: 'Display_FieldOfView', label: 'Field of view (degrees)', group: 'display', type: 'number', default: '78.19', min: 1, max: 179, step: 0.01 },
   { key: 'Display_PitchFovCompensation', label: 'Pitch FOV compensation', group: 'display', type: 'onoff', default: 'on' },
 
-  { key: 'Mouse_Look', label: 'Mouse look', group: 'mouse', type: 'yesno', default: 'yes' },
+  { key: 'Mouse_Look', label: 'Mouse look', group: 'mouse', type: 'yesno', default: 'yes', phoneDefault: 'no' },
   { key: 'Mouse_LookSensitivity', label: 'Mouse look sensitivity (%)', group: 'mouse', type: 'number', default: '100', min: 1 },
+
+  { key: 'Game_PopupDelay', label: 'Pop-up accept delay (ticks)', group: 'game', type: 'number', default: '40', min: 0 },
 ];
+
+var Game_GodModeField = { key: 'Game_GodMode', label: 'God mode', group: 'game', type: 'onoff', default: 'off' };
+
+var Game_PhoneOnlyOverrides = { Display_MouseCursor: 'none' };
 
 var Game_LanguageField = {
   key: 'Language', label: 'Game language', group: 'language', type: 'select', default: 'ENGLISH',
@@ -129,9 +135,25 @@ function Game_IniSetVariable(text, section, key, value) {
 
 function Game_ApplyBootOverrides() {
   var params = Game_ParseFragmentParams();
+  var isPhone = (typeof Game_IsPhone === 'function') && Game_IsPhone();
+  var allFields = Game_SettingsFields.concat([Game_GodModeField]);
 
   var cfgOverrides = '';
-  Game_SettingsFields.forEach(function (field) {
+
+  if (isPhone) {
+    Game_SettingsFields.forEach(function (field) {
+      if (field.phoneDefault == null) return;
+      if (params.has(field.key)) return;
+      if (Game_GetCookie(Game_FieldCookieName(field)) != null) return;
+      cfgOverrides += field.key + '=' + field.phoneDefault + '\n';
+    });
+    Object.keys(Game_PhoneOnlyOverrides).forEach(function (key) {
+      if (params.has(key)) return;
+      cfgOverrides += key + '=' + Game_PhoneOnlyOverrides[key] + '\n';
+    });
+  }
+
+  allFields.forEach(function (field) {
     var c = Game_GetCookie(Game_FieldCookieName(field));
     if (c != null) cfgOverrides += field.key + '=' + c + '\n';
   });
@@ -184,8 +206,8 @@ window.Game_SaveSetupOptions = function (payload) {
   });
 };
 
-var Game_SettingsGroupLabels = { language: 'Language', audio: 'Audio', display: 'Display', mouse: 'Mouse look' };
-var Game_SettingsGroupOrder = ['language', 'audio', 'display', 'mouse'];
+var Game_SettingsGroupLabels = { language: 'Language', audio: 'Audio', display: 'Display', mouse: 'Mouse look', game: 'Game tweaks' };
+var Game_SettingsGroupOrder = ['language', 'audio', 'display', 'mouse', 'game'];
 
 function Game_BuildFieldRow(field, params) {
   var row = document.createElement('label');
@@ -198,7 +220,9 @@ function Game_BuildFieldRow(field, params) {
 
   var uriValue = Game_FieldUriValue(field, params);
   var cookieValue = Game_GetCookie(Game_FieldCookieName(field));
-  var effective = (uriValue != null) ? uriValue : (cookieValue != null ? cookieValue : field.default);
+  var isPhone = (typeof Game_IsPhone === 'function') && Game_IsPhone();
+  var phoneValue = (isPhone && field.phoneDefault != null) ? field.phoneDefault : null;
+  var effective = (uriValue != null) ? uriValue : (cookieValue != null ? cookieValue : (phoneValue != null ? phoneValue : field.default));
   var forced = uriValue != null;
 
   var control;
@@ -243,7 +267,8 @@ function Game_BuildSettingsPanel() {
 
   var params = Game_ParseFragmentParams();
   var byGroup = { language: [Game_LanguageField] };
-  Game_SettingsFields.forEach(function (f) { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
+  var fields = Game_SettingsFields.concat(params.has('Game_DeveloperMode') ? [Game_GodModeField] : []);
+  fields.forEach(function (f) { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
 
   Game_SettingsGroupOrder.forEach(function (g) {
     var fields = byGroup[g];
