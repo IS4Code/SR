@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <SDL.h>
 #include "midi-plugins.h"
 #include "fluidsynth.h"
 
@@ -33,6 +34,7 @@ typedef struct _fluidsynth_stream_
     fluid_settings_t *settings;
     fluid_synth_t *synth;
     fluid_player_t *player;
+    SDL_AudioStream *resampler;
     // copied from input
     char *midi_file;
     void *midi_buffer;
@@ -42,6 +44,8 @@ typedef struct _fluidsynth_stream_
 static fluidsynth_stream *open_streams[MAX_FLUIDSYNTH_STREAMS];
 static char *soundfont_path = NULL;
 static unsigned int stream_sample_rate = 44100;
+
+static unsigned int synth_sample_rate = 44100;
 static unsigned char master_volume = 127;
 
 static int file_exists(char const *filename)
@@ -101,6 +105,7 @@ static void destroy_stream(fluidsynth_stream *stream)
     }
     if (stream->synth) delete_fluid_synth(stream->synth);
     if (stream->settings) delete_fluid_settings(stream->settings);
+    if (stream->resampler) SDL_FreeAudioStream(stream->resampler);
     if (stream->midi_file) free(stream->midi_file);
     if (stream->midi_buffer) free(stream->midi_buffer);
 
@@ -126,7 +131,7 @@ static fluidsynth_stream *create_stream(void)
         return NULL;
     }
 
-    fluid_settings_setnum(stream->settings, "synth.sample-rate", (double) stream_sample_rate);
+    fluid_settings_setnum(stream->settings, "synth.sample-rate", (double) synth_sample_rate);
     fluid_settings_setint(stream->settings, "synth.midi-channels", 16);
     fluid_settings_setint(stream->settings, "synth.threadsafe-api", 0);
 
@@ -155,6 +160,19 @@ static fluidsynth_stream *create_stream(void)
         delete_fluid_settings(stream->settings);
         free(stream);
         return NULL;
+    }
+
+    if (synth_sample_rate != stream_sample_rate)
+    {
+        stream->resampler = SDL_NewAudioStream(AUDIO_S16LSB, 2, synth_sample_rate, AUDIO_S16LSB, 2, stream_sample_rate);
+        if (stream->resampler == NULL)
+        {
+            delete_fluid_player(stream->player);
+            delete_fluid_synth(stream->synth);
+            delete_fluid_settings(stream->settings);
+            free(stream);
+            return NULL;
+        }
     }
 
     open_streams[index] = stream;
@@ -211,6 +229,8 @@ static void * MIDI_PLUGIN_API open_buffer(void const *midibuffer, long int size)
     return (void *) stream;
 }
 
+#define FLUIDSYNTH_RESAMPLE_CHUNK_FRAMES 256
+
 static long int MIDI_PLUGIN_API get_data(void *handle, void *buffer, long int size)
 {
     if (handle == NULL) return -2;
@@ -220,28 +240,62 @@ static long int MIDI_PLUGIN_API get_data(void *handle, void *buffer, long int si
 
     fluidsynth_stream *stream = (fluidsynth_stream *) handle;
 
-    int frames = size / 4; // 16-bit stereo
-
-    // looping starts when the MIDI reaches the end (not when the sound goes quiet)
-    int total_ticks = fluid_player_get_total_ticks(stream->player);
-    if ((total_ticks > 0) && (fluid_player_get_current_tick(stream->player) >= total_ticks))
+    if (stream->resampler == NULL)
     {
-        // render less to indicate the end
-        frames--;
+        int frames = size / 4; // 16-bit stereo
+
+        // looping starts when the MIDI reaches the end (not when the sound goes quiet)
+        int total_ticks = fluid_player_get_total_ticks(stream->player);
+        if ((total_ticks > 0) && (fluid_player_get_current_tick(stream->player) >= total_ticks))
+        {
+            // render less to indicate the end
+            frames--;
+        }
+
+        if (fluid_synth_write_s16(stream->synth, frames, buffer, 0, 2, buffer, 1, 2) != FLUID_OK)
+        {
+            return -1;
+        }
+
+        if (frames != (size / 4))
+        {
+            // reset before playback finishes
+            fluid_player_seek(stream->player, 0);
+        }
+
+        return ((long int) frames) << 2;
     }
 
-    if (fluid_synth_write_s16(stream->synth, frames, buffer, 0, 2, buffer, 1, 2) != FLUID_OK)
+    // stream->synth renders at synth_sample_rate, fed through the resampler
+    while (SDL_AudioStreamAvailable(stream->resampler) < size)
     {
-        return -1;
+        int16_t chunk[FLUIDSYNTH_RESAMPLE_CHUNK_FRAMES * 2];
+        int total_ticks = fluid_player_get_total_ticks(stream->player);
+        int ended = (total_ticks > 0) && (fluid_player_get_current_tick(stream->player) >= total_ticks);
+
+        if (fluid_synth_write_s16(stream->synth, FLUIDSYNTH_RESAMPLE_CHUNK_FRAMES, chunk, 0, 2, chunk, 1, 2) != FLUID_OK)
+        {
+            return -1;
+        }
+
+        if (SDL_AudioStreamPut(stream->resampler, chunk, sizeof(chunk)) != 0)
+        {
+            return -1;
+        }
+
+        if (ended)
+        {
+            SDL_AudioStreamFlush(stream->resampler);
+            // reset before playback finishes
+            fluid_player_seek(stream->player, 0);
+            break;
+        }
     }
 
-    if (frames != (size / 4))
-    {
-        // reset before playback finishes
-        fluid_player_seek(stream->player, 0);
-    }
+    int got = SDL_AudioStreamGet(stream->resampler, buffer, (int) size);
+    if (got < 0) got = 0;
 
-    return ((long int) frames) << 2;
+    return (long int) got;
 }
 
 static int MIDI_PLUGIN_API rewind_midi(void *handle)
@@ -336,7 +390,9 @@ int MIDI_PLUGIN_API initialize_midi_plugin(unsigned short int rate, midi_plugin_
         }
     }
 
-    if ((stream_sample_rate < 8000) || (stream_sample_rate > 96000)) return -2;
+    if (stream_sample_rate < 8000) return -2;
+    // render at maximum supported rate
+    synth_sample_rate = (stream_sample_rate > 96000) ? 96000 : stream_sample_rate;
     if (functions == NULL) return -3;
 
     if (soundfont_sf2)
