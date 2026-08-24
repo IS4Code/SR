@@ -28,10 +28,12 @@ window.addEventListener('keydown', handleKeyEvent, true);
 window.addEventListener('keyup', handleKeyEvent, true);
 window.addEventListener('keypress', handleKeyEvent, true);
 
-window.addEventListener('beforeunload', function (e) {
+function handleBeforeUnload(e)
+{
   e.preventDefault();
   e.returnValue = "Remember to save the game before exiting the page.";
-});
+}
+window.addEventListener('beforeunload', handleBeforeUnload);
 
 var Game_Pages = ['game', 'settings', 'log'];
 var Game_PageButtons = {

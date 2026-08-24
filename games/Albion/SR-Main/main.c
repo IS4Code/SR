@@ -1490,6 +1490,12 @@ void Game_Iterate(void)
         if (!finalized)
         {
             finalized = 1;
+
+            MAIN_THREAD_EM_ASM({
+                document.body.classList.add('start-pending');
+                window.removeEventListener('beforeunload', handleBeforeUnload);
+            });
+
             exit(Game_Finalize());
         }
     }
