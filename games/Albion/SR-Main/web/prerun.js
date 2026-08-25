@@ -88,6 +88,15 @@ if (!Module.ENVIRONMENT_IS_PTHREAD)
 
         try
         {
+            Module.ccall("Game_SetVersion", null, ["number", "number"], [2, 0]);
+        }
+        catch (e)
+        {
+            console.error("Version override failed: " + e);
+        }
+
+        try
+        {
             if (Game_VideoOverlayActive && Module.ccall)
             {
                 Module.ccall("Game_WebVideo_Pause", null, [], []);

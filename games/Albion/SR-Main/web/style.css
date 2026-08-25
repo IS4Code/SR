@@ -20,6 +20,7 @@ a:active, a:focus {
 .page { display: none; }
 body.page-game #page-game,
 body.page-settings #page-settings,
+body.page-controls #page-controls,
 body.page-log #page-log { display: block; }
 
 #canvas {
@@ -58,7 +59,7 @@ body.page-log #page-log { display: block; }
   outline: none;
 }
 
-#settings-panel {
+.settings-panel {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
@@ -70,7 +71,7 @@ body.page-log #page-log { display: block; }
   overflow-y: auto;
 }
 
-#settings-panel fieldset {
+.settings-panel fieldset {
   border: 1px solid rgba(255, 217, 76, 0.25);
   border-radius: 4px;
   margin: 0 0 12px;
@@ -78,7 +79,7 @@ body.page-log #page-log { display: block; }
   max-width: 420px;
 }
 
-#settings-panel legend {
+.settings-panel legend {
   padding: 0 6px;
   color: rgba(255, 217, 76, 0.85);
   font-weight: bold;
@@ -117,6 +118,24 @@ body.page-log #page-log { display: block; }
 .settings-row select:disabled,
 .settings-row input:disabled {
   opacity: 0.5;
+}
+
+.controls-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.controls-key {
+  flex: 0 0 auto;
+  min-width: 170px;
+  color: #ffd94c;
+}
+
+.controls-desc {
+  flex: 1 1 auto;
+  color: rgba(255, 217, 76, 0.75);
 }
 
 #ui-container {

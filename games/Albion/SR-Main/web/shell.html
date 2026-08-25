@@ -18,6 +18,7 @@
 <div class="buttons">
 <button id="btn-game" class="active" type="button">Game</button>
 <button id="btn-settings" type="button">Settings</button>
+<button id="btn-controls" type="button">Controls</button>
 <button id="btn-share" type="button" style="display: none;">Share</button>
 <button id="btn-log" type="button">Log</button>
 <button id="btn-export-saves" type="button">Export saves</button>
@@ -29,12 +30,41 @@
 <button id="btn-mobile-menu" class="phone-only" type="button">Menu/Back</button>
 <button id="btn-mobile-map" class="phone-only" type="button">Map</button>
 <button id="btn-mobile-selection" class="phone-only" type="button">Selection mode</button>
-<div id="credits"><a href="https://github.com/IS4Code/Albion">Made by IS4</a></div>
+<div id="credits"><a href="https://github.com/IS4Code/Albion">Made by IS4</a><br><a href="https://discord.com/invite/N9CekjBx">Join Discord</a></div>
 </div>
 </div>
 <section id="pages">
 <div id="page-settings" class="page">
-<div id="settings-panel"></div>
+<div id="settings-panel" class="settings-panel"></div>
+</div>
+<div id="page-controls" class="page">
+<div id="controls-panel" class="settings-panel">
+<fieldset>
+<legend>Movement</legend>
+<div class="controls-row"><span class="controls-key">W A S D / Arrow keys</span><span class="controls-desc">Move/turn</span></div>
+<div class="controls-row"><span class="controls-key">Shift</span><span class="controls-desc">Sprint</span></div>
+<div class="controls-row"><span class="controls-key">Alt</span><span class="controls-desc">Strafe</span></div>
+<div class="controls-row"><span class="controls-key">Mouse</span><span class="controls-desc">Look around in the 3D view (double-click to toggle)</span></div>
+<div class="controls-row"><span class="controls-key">Mouse wheel</span><span class="controls-desc">Zoom (field of view in 3D, map zoom in 2D)</span></div>
+<div class="controls-row"><span class="controls-key">Page Up / Page Down</span><span class="controls-desc">Look up / down (3D view)</span></div>
+</fieldset>
+<fieldset>
+<legend>Party</legend>
+<div class="controls-row"><span class="controls-key">1 – 6</span><span class="controls-desc">Select party member</span></div>
+<div class="controls-row"><span class="controls-key">F1 – F6</span><span class="controls-desc">Open inventory for party member 1–6</span></div>
+</fieldset>
+<fieldset>
+<legend>Map</legend>
+<div class="controls-row"><span class="controls-key">Tab</span><span class="controls-desc">Automap (from the 3D view)</span></div>
+</fieldset>
+<fieldset>
+<legend>Game</legend>
+<div class="controls-row"><span class="controls-key">Esc</span><span class="controls-desc">Menu / close popup</span></div>
+<div class="controls-row"><span class="controls-key">F8</span><span class="controls-desc">Take a screenshot</span></div>
+<div class="controls-row"><span class="controls-key">F9</span><span class="controls-desc">Quicksave</span></div>
+<div class="controls-row"><span class="controls-key">F12</span><span class="controls-desc">Copy a screenshot to the clipboard</span></div>
+</fieldset>
+</div>
 </div>
 <div id="page-log" class="page">
 <textarea id="output" rows="8" readonly></textarea>

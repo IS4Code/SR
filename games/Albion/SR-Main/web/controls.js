@@ -35,10 +35,11 @@ function handleBeforeUnload(e)
 }
 window.addEventListener('beforeunload', handleBeforeUnload);
 
-var Game_Pages = ['game', 'settings', 'log'];
+var Game_Pages = ['game', 'settings', 'controls', 'log'];
 var Game_PageButtons = {
   game: document.getElementById('btn-game'),
   settings: document.getElementById('btn-settings'),
+  controls: document.getElementById('btn-controls'),
   log: document.getElementById('btn-log'),
 };
 

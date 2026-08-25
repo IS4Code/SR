@@ -1,57 +1,38 @@
-# SR
+# Albion
 
-A project to [statically recompile](https://en.wikipedia.org/wiki/Binary_translation "Static binary translation") DOS and Windows game executables to create Windows (x86/x64) or Linux (x86/x64/arm/arm64/riscv64) or MacOS (x64/arm64) versions of the games.
+A browser version of [Albion](https://albion.wiki.gg/), the 1995 role-playing game by Blue Byte.
 
-Following DOS games are supported:
+[▶ Play here](https://albion.is4.site/online/)
 
-* [Albion](https://en.wikipedia.org/wiki/Albion_\(video_game\) "Albion")
-* [X-Com: UFO Defense (UFO: Enemy Unknown)](https://en.wikipedia.org/wiki/UFO:_Enemy_Unknown "X-Com: UFO Defense (UFO: Enemy Unknown)")
-* [X-Com: Terror from the Deep](https://en.wikipedia.org/wiki/X-COM:_Terror_from_the_Deep "X-Com: Terror from the Deep")
-* [Warcraft: Orcs & Humans](https://en.wikipedia.org/wiki/Warcraft:_Orcs_%26_Humans "Warcraft: Orcs & Humans")
+The game runs natively in WebAssembly thanks to the static recompiler from the [SR](https://github.com/M-HT/SR) port,
+of which this repository is a fork with the aim to bring further improvements.
 
-Following Windows games are supported:
+## Credits
 
-* [Septerra Core: Legacy of the Creator](https://en.wikipedia.org/wiki/Septerra_Core "Septerra Core: Legacy of the Creator")
-* [Battle Isle 3: Shadow of the Emperor (Battle Isle 2220: Shadow of the Emperor)](https://en.wikipedia.org/wiki/Battle_Isle_2220 "Battle Isle 3: Shadow of the Emperor (Battle Isle 2220: Shadow of the Emperor)")
+* [M-HT](https://github.com/M-HT/SR): The original SR project without which this wouldn't be possible.
+* [Jurie Horneman](https://github.com/jhorneman): Releasing Albion source codes which helped in analyzing the binary.
+* [CSinkers](https://github.com/csinkers) and [Flo](https://github.com/a2flo): Earlier reverse-engineering effort.
+* The Albion team.
 
-The source code is released with MIT license (except libraries, etc. by other people, which have their own license).
-For the purpose of using the code in GPL projects, the source code is also released with GPLv2 or later and LGPLv2.1 or later.
+## Features
 
-<hr/>
+### General
 
-The projects consists of following subprojects (read the readme files in subproject directories for more information):
+* Works in the browser; game data is downloaded only as it is needed.
+* Saves are kept in the browser, and can be exported and imported as a ZIP file.
+* Saved game state can be shared as a link with other players.
+* Screenshots to a file or straight to the clipboard.
+* Extra controls to make the game playable on phones.
+* Mouse look and WASD movement.
+* Support for additional languages.
 
-* **SR**
-  * The static recompiler (for DOS executables) itself.
-  * It takes the original executable as an input together with information about the original executable and produces x86 / arm / llasm / x64 assembler version of the executable.
-  * The generated x86/arm/llasm/x64 assembler version of the executable is not part of the project.
-* **SRW**
-  * The static recompiler (for Windows executables) itself.
-  * It takes the original executable as an input together with information about the original executable and produces x86 / llasm / x64 assembler version of the executable.
-  * The generated x86/llasm/x64 assembler version of the executable is not part of the project.
-* **llasm**
-  * Program which converts *.llasm* file to [LLVM](https://llvm.org/ "LLVM") language-independent intermediate representation, which can be compiled to native code.
-* **SR-games**
-  * The information about the original DOS executables.
-* **SRW-games**
-  * The information about the original Windows executables.
-* **games**
-  * Game specific source code.
-  * Together with the generated assembler versions of the executables, these files can be used to build Windows (x86/x64) or Linux (x86/x64/arm/arm64/riscv64) or MacOS (x64/arm64) versions of the games.
-  * Uses plugins to play (or play better) music or to enhance the displayed image in DOS games.
-* **midi-plugins**
-  * Plugins used by the games to play MIDI (and other types) music.
-* **scaler-plugins**
-  * Plugins used by the DOS games to enhance the displayed image.
-* **pycfg**
-  * A configuration utility that can be used on Linux (sorry Windows/MacOS users) to change settings in the configuration files (without editing the files).
-* **SR64-loader**
-  * Loader for older 64-bit versions. It's no longer needed.
+### Graphics and sound
 
-<hr/>
+* The 3D view has adjustable field-of-view.
+* The 2D view has adjustable zoom level.
+* Intro and credits are remastered and play as native browser video.
+* Supports FluidSynth and ADLMIDI to play the music using a SoundFont or OPL3.
 
-Some notes:
+## Building
 
-* The project supports creating 32-bit or 64-bit, Windows or Linux or MacOS versions of the games.
-* The generated versions are little-endian, not big-endian.
-* The generated arm version supports softfp and hardfp calling conventions.
+See the [SR](https://github.com/M-HT/SR) project for build instructions.
