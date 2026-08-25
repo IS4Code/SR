@@ -10,7 +10,10 @@ var Game_SettingsFields = [
   },
   { key: 'Display_ScaledWidth', label: 'Window width', group: 'display', type: 'number', default: '1080', min: 320 },
   { key: 'Display_ScaledHeight', label: 'Window height', group: 'display', type: 'number', default: '720', min: 240 },
-  { key: 'Display_MouseCursorScale', label: 'Mouse cursor scale (0 = auto)', group: 'display', type: 'number', default: '0', min: 0 },
+  {
+    key: 'Display_MouseCursorScale', label: 'Mouse cursor scale', group: 'display', type: 'select', default: 'auto',
+    options: [['auto', 'Auto'], ['1', '1x'], ['2', '2x'], ['3', '3x'], ['4', '4x'], ['5', '5x'], ['6', '6x']]
+  },
 
   { key: 'Display_Enhanced_3D_Rendering', label: 'Enhanced 3D rendering', group: '3d', type: 'onoff', default: 'on' },
   // {
