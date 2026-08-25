@@ -315,13 +315,15 @@ elif device == 'web':
     embed_flags = ' '.join('--embed-file data/%s@/%s' % (f, f) for f in data_embedded_files)
     preload_flags = ' '.join('--preload-file data/%s@/%s' % (f, f) for f in data_preloaded_files)
 
-    env.Append(CCFLAGS    = '-D__DEBUG__ -m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
+    env.Append(CCFLAGS    = '-m32 -DUSE_SDL2 -sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -pthread -sUSE_PTHREADS=1',
                CPPPATH    = ['brotli/c/include'],
                LINKFLAGS  = '-sUSE_SDL_MIXER=2 -sSDL2_MIXER_FORMATS=[] -sUSE_SDL=2 -sUSE_ZLIB=1 -sCASE_INSENSITIVE_FS=1 -lidbfs.js ' + preload_flags + ' ' + embed_flags + ' --pre-js web/prerun.js --shell-file web/shell.html -m32 -pthread -sUSE_PTHREADS=1 -sALLOW_MEMORY_GROWTH=1 -sDYNAMIC_EXECUTION=0 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=0 -sALLOW_BLOCKING_ON_MAIN_THREAD=0 -sEXPORTED_RUNTIME_METHODS=["ccall","cwrap","FS","callMain"] --profiling-funcs',
                LIBS       = ['pthread', 'dl'],
                LLASMFLAGS = '-no-tail-calls',
                LLVMFLAGS  = '-march=wasm32'
               )
+    if debug > 1:
+        env.Append(CCFLAGS = '-D__DEBUG__')
     def sync_tree(src_path, dst_path):
         # copies updated files and removes unneeded files
         if os.path.isdir(src_path):
