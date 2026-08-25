@@ -307,7 +307,7 @@ void Game_ProcessKEvents(void)
                             break;
                         case SDLK_KP_ENTER:
                             scancode = 0x1c;
-                            ascii_code = 0x1c;
+                            ascii_code = Game_InEnteringText ? SDLK_RETURN : 0x1c;
 
                             break;
                         case SDLK_KP_EQUALS:
