@@ -121,6 +121,9 @@ EXTERNAL_VARIABLE uint32_t Game_PitchFovCompensation;			/* widen FOV based on ca
 EXTERNAL_VARIABLE int32_t Game_TileCullNearTolerancePercent;	/* draw_floor_and_ceiling near-clip pre-test tolerance */
 EXTERNAL_VARIABLE int32_t Game_TileCullAngleTolerancePercent;	/* draw_floor_and_ceiling xvis pre-test tolerance */
 
+EXTERNAL_VARIABLE double Game_2DZoomFactor;							/* >=GAME_2DZOOM_MIN; 1.0 = off/native */
+EXTERNAL_VARIABLE uint32_t Game_Enh2D_HiresEnabled;					/* zoom still applies in lowres when off */
+
 EXTERNAL_VARIABLE SDL_Window *Game_Window;
 EXTERNAL_VARIABLE SDL_Renderer *Game_Renderer;
 EXTERNAL_VARIABLE SDL_Texture *Game_Texture[3];
@@ -188,6 +191,35 @@ EXTERNAL_CVAR_BGN uint32_t Game_ScreenshotEnabled; EXTERNAL_CVAR_END
 EXTERNAL_CVAR_BGN uint32_t Game_ScreenshotAutomaticFilename; EXTERNAL_CVAR_END
 
 EXTERNAL_VARIABLE Game_sample *Game_SampleCache[GAME_SAMPLE_CACHE_SIZE];
+
+// enhanced 2D engine
+EXTERNAL_CVAR_BGN volatile uint32_t Game_SyntheticQuadrantPass; EXTERNAL_CVAR_END /* skip camera adjustment in Draw_2D_map */
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_TrueCallerAddr; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_SuppressScrollDraw; EXTERNAL_CVAR_END /* disable drawing in Draw_2D_scroll_buffer */
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_CompositeActive; EXTERNAL_CVAR_END /* 0 at zoom==1.0 */
+
+// 2D tile-selection mouse area
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_SelX; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_SelY; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_SelW; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_SelH; EXTERNAL_CVAR_END
+
+// Get_2D_mouse_state's view-space party box (see Game_Enh2D_PartyBox)
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_PartyBoxW; EXTERNAL_CVAR_END
+EXTERNAL_CVAR_BGN volatile uint32_t Game_Enh2D_PartyBoxH; EXTERNAL_CVAR_END
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DBuffer[2];
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DRefBuffer[2]; /* 360x192 each */
+
+#define GAME_ENH2D_SLOTS 4
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DScreenBuffer[GAME_ENH2D_SLOTS]; /* 360x240 each */
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DRefCopy[GAME_ENH2D_SLOTS];      /* 360x192 each */
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DMaskBuf[GAME_ENH2D_SLOTS];      /* 360x192 each */
+EXTERNAL_VARIABLE uint8_t *Game_Enh2DPrevRef;      /* 360x192 copy */
+EXTERNAL_VARIABLE Game_Enh2DInfo Game_Enh2DDraw;
+EXTERNAL_VARIABLE Game_Enh2DInfo Game_Enh2DDisplay;
+
+EXTERNAL_VARIABLE Game_Enh2DInfo Game_Enh2DSnapshot[GAME_ENH2D_SLOTS];
+EXTERNAL_VARIABLE volatile uint32_t Game_Enh2DSnapshotIndex;
 
 
 EXTERNAL_CVAR_BGN PTR32(void) Game_stdin;				/* stdin */ EXTERNAL_CVAR_END

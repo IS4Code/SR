@@ -1069,6 +1069,9 @@ static int Game_Initialize(void)
     Game_TileCullNearTolerancePercent = 0;
     Game_TileCullAngleTolerancePercent = 0;
 
+    Game_2DZoomFactor = 1.0;
+    Game_Enh2D_HiresEnabled = 1;
+
     Game_Window = NULL;
     Game_Renderer = NULL;
     Game_Texture[0] = NULL;

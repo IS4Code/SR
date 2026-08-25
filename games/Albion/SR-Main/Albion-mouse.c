@@ -142,7 +142,7 @@ static void Game_MouseLook_Pitch(int32_t yrel)
 
     // convert Y offset to pitch
     double angle = atan2((double) loc_14A492, focal_length_y);
-    
+
     // move
     angle -= (double) yrel * GAME_3D_PITCH_SENSITIVITY * Game_MouseLookSensitivity / 100.0;
 
@@ -165,10 +165,17 @@ void Game_MouseWheel_Move(int32_t y)
 {
     if (Game_ScreenType() == GAME_SCREEN_MAP_3D)
     {
-        // 3D zoom
         if (y != 0)
         {
             Game_Fov_Adjust(pow(1.1, (double) y));
+        }
+        return;
+    }
+    else if (Game_ScreenType() == GAME_SCREEN_MAP_2D)
+    {
+        if (y != 0)
+        {
+            Game_2DZoomFactor_Adjust((double) -y * GAME_2DZOOM_STEP);
         }
         return;
     }

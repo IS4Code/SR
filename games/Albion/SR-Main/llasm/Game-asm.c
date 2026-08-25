@@ -379,3 +379,38 @@ EXTERNC uint32_t CCALL Game_RunProcReg2_Asm(void *proc_addr, const char *proc_pa
     return eax;
 }
 
+EXTERNC void CCALL Game_RunProcVoid0_Asm(void *proc_addr)
+{
+    _cpu *cpu;
+    uint32_t old_eax, old_ecx, old_edx, old_ebx, old_ebp, old_esi, old_edi;
+    uint32_t old_InterruptFlag, old_eflags;
+
+    cpu = x86_initialize_cpu();
+
+    old_eax = eax;
+    old_ecx = ecx;
+    old_edx = edx;
+    old_ebx = ebx;
+    old_ebp = ebp;
+    old_esi = esi;
+    old_edi = edi;
+
+    old_InterruptFlag = X86_InterruptFlag;
+    old_eflags = eflags;
+    eflags = 0x3202;
+
+    ecx = PTR2REG(proc_addr);
+    c_RunProcECX(cpu);
+
+    eax = old_eax;
+    ecx = old_ecx;
+    edx = old_edx;
+    ebx = old_ebx;
+    ebp = old_ebp;
+    esi = old_esi;
+    edi = old_edi;
+
+    eflags = old_eflags;
+    X86_InterruptFlag = old_InterruptFlag;
+}
+

@@ -34,6 +34,10 @@ func Set_3DM_SquareSize square_size_cm
 func Init_3DM_Core
 funcv Init_3DM_SkyTable_Core
 funcv Game_Sync
+funcv Game_Enh2D_BeginFrame
+funcv Game_Enh2D_BeginQuadrants
+funcv Game_Enh2D_Finish
+funcv Game_Enh2D_SelectDraw X, Y
 
 ; stack params
 func CLIB_vfprintf *stream, *format, *ap
@@ -206,6 +210,30 @@ proc Init_3DM_SkyTable_Core_proc public
         Game_Call_Asm_Reg0_void Init_3DM_SkyTable_Core,-1
 
 endp ; end procedure Init_3DM_SkyTable_Core_proc
+
+proc Game_Enh2D_BeginFrame_proc public
+
+        Game_Call_Asm_Reg0_void Game_Enh2D_BeginFrame,-1
+
+endp ; end procedure Game_Enh2D_BeginFrame_proc
+
+proc Game_Enh2D_BeginQuadrants_proc public
+
+        Game_Call_Asm_Reg0_void Game_Enh2D_BeginQuadrants,-1
+
+endp ; end procedure Game_Enh2D_BeginQuadrants_proc
+
+proc Game_Enh2D_Finish_proc public
+
+        Game_Call_Asm_Reg0_void Game_Enh2D_Finish,-1
+
+endp ; end procedure Game_Enh2D_Finish_proc
+
+proc Game_Enh2D_SelectDraw_proc public
+
+        Game_Call_Asm_Reg2_void Game_Enh2D_SelectDraw,-1
+
+endp ; end procedure Game_Enh2D_SelectDraw_proc
 
 proc SR_Sync public
 

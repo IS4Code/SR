@@ -39,6 +39,13 @@ uint16_t Game_RootScreenType(void)
     return GAME_SCREEN_NO_SCREEN;
 }
 
+int Game_SceneVisible(int scene_type)
+{
+    uint16_t screen_type = Game_RootScreenType();
+
+    return (screen_type == (uint16_t) scene_type) || (screen_type == GAME_SCREEN_DIALOGUE);
+}
+
 extern uint16_t loc_153B28; // PARTY_DATA.Year
 extern uint16_t loc_153B2A; // PARTY_DATA.Month
 extern uint16_t loc_153B2C; // PARTY_DATA.Day

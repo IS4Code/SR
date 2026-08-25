@@ -263,3 +263,12 @@ loc_133A64,116, ; BBOPM data
 
 loc_1B0000,76, ; ASM data
 loc_1B0050,7776, ; ASM data
+
+
+loc_17D10,1,cmp dword [Game_SyntheticQuadrantPass], 0|jnz loc_17D10_inner|jmp loc_17D10_outer|loc_17D10_inner: push ebx|jmp loc_17D11|loc_17D10_outer: pop eax|mov [Game_Enh2D_TrueCallerAddr], eax|call Game_Enh2D_BeginFrame_proc|push ebx|call loc_17D11|call Game_Enh2D_BeginQuadrants_proc|call loc_17D10|call Game_Enh2D_NextTile_proc|call loc_17D10|call Game_Enh2D_NextTile_proc|call loc_17D10|call Game_Enh2D_NextTile_proc|call loc_17D10|call Game_Enh2D_Finish_proc|call loc_1FDB1|call loc_1847B|mov eax, [Game_Enh2D_TrueCallerAddr]|jmp eax|loc_17D11: ; Draw_2D_map
+loc_191E4,1,cmp dword [Game_SyntheticQuadrantPass], 0|jnz loc_191E4_skip|push ebx|jmp loc_191E5|loc_191E4_skip: retn ; skip camera movement on Game_SyntheticQuadrantPass
+loc_1847B,1,cmp dword [Game_Enh2D_SuppressScrollDraw], 0|jnz loc_1847B_skip|push ebx|jmp loc_1847C|loc_1847B_skip: retn ; suppress Draw_2D_scroll_buffer on Game_Enh2D_SuppressScrollDraw
+loc_1FDB1,5,cmp dword [Game_Enh2D_SuppressScrollDraw], 0|jnz loc_1FDB1_skip|push dword 0x2c|jmp loc_1FDB1_after|loc_1FDB1_skip: retn ; suppress overlay drawing
+loc_6D38B,4,;sub dx, [edi+0x8] ; albion#0bb2181 (vertical)
+loc_6D40E,4,;sub dx, [edi+0x6] ; albion#0bb2181 (horizontal)
+loc_140A8,90,push eax|push ecx|push edx|mov eax, esp|sub esp, byte 4|and esp, 0FFFFFFF0h|mov [esp], eax|call Game_Enh2D_SelectArea|mov esp, [esp]|pop edx|pop ecx|pop eax|mov eax, [Game_Enh2D_SelX]|mov [ebp-16], eax|mov eax, [Game_Enh2D_SelY]|mov [ebp-12], eax|mov eax, [Game_Enh2D_SelW]|mov [ebp-8], eax|mov eax, [Game_Enh2D_SelH]|mov [ebp-4], eax ; composite-space tile selection arithmetic

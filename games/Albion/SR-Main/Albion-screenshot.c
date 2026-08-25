@@ -107,6 +107,34 @@ extern uint16_t loc_182010;
 }
 #endif
 
+extern uint8_t loc_17D95C[256]; // &Recolour_tables[7][0] - same recolor table SamplePixel_2D (display/pc.c) uses
+extern uint8_t loc_13B726[];    // Select_2D_cursor - the 18x18 masked border sprite, same as SamplePixel_2D
+
+// SamplePixel_2D (display/pc.c) analogue for the enhanced-resolution screenshot path
+static uint8_t Game_Enh2D_SamplePixelForScreenshot(int comp_x, int comp_y)
+{
+    uint8_t base = Game_Enh2DDisplay.Overlay[comp_y * Game_Enh2DDisplay.CompW + comp_x];
+
+    if (Game_Enh2DDisplay.SelectorActive)
+    {
+        int lx = comp_x - Game_Enh2DDisplay.SelectorX;
+        int ly = comp_y - Game_Enh2DDisplay.SelectorY;
+
+        if ((lx >= -1) && (lx < 17) && (ly >= -1) && (ly < 17))
+        {
+            uint8_t p = loc_13B726[(ly + 1) * 18 + (lx + 1)];
+            if (p != 0) return p;
+        }
+
+        if ((lx >= 0) && (lx < 16) && (ly >= 0) && (ly < 16))
+        {
+            return loc_17D95C[base];
+        }
+    }
+
+    return base;
+}
+
 static INLINE uint8_t *write_16be(uint8_t *ptr, uint16_t value)
 {
     ptr[0] = value >> 8;
@@ -1185,7 +1213,7 @@ void CCALL Game_save_screenshot(const char *filename)
     void *stream;
     FILE *f;
 #endif
-    int image_mode, DrawOverlay;
+    int image_mode, DrawOverlay, Draw2DOverlay;
     const char *extension;
     char *filename2;
 
@@ -1249,6 +1277,8 @@ void CCALL Game_save_screenshot(const char *filename)
 
     screenshot_src = &(Game_FrameBuffer[loc_182010 * 360 * 240]);
     DrawOverlay = Get_DrawOverlay(screenshot_src, &Game_OverlayDisplay);
+    // 2D's viewport is the whole top of the screen, so it needs image_mode 11 rather than the sub-rectangle modes 2/6 use
+    Draw2DOverlay = Game_Enh2D_HiresEnabled && Game_Enh2DDisplay.Active;
 
     if (Game_AdvancedScaling)
     {
@@ -1257,7 +1287,7 @@ void CCALL Game_save_screenshot(const char *filename)
             width = Scaler_ScaleFactor * 360;
             height = Scaler_ScaleFactor * 240;
 
-            if (Scaler_ScaleTextureData && (Game_ScreenshotFormat > 2))
+            if ((Scaler_ScaleTextureData && (Game_ScreenshotFormat > 2)) || Draw2DOverlay)
             {
                 image_mode = 11;
             }
@@ -1959,7 +1989,36 @@ void CCALL Game_save_screenshot(const char *filename)
             }
         }
 
-        ScalerPlugin_scale(Scaler_ScaleFactor, buf_unscaled, buf_scaled, 360, 240, 0);
+        if (Scaler_ScaleTextureData)
+        {
+            ScalerPlugin_scale(Scaler_ScaleFactor, buf_unscaled, buf_scaled, 360, 240, 0);
+        }
+        else
+        {
+            // ScalerPlugin_scale no-ops without a loaded hqx/xbrz plugin, so upscale manually here
+            uint32_t *src_row = buf_unscaled;
+            uint32_t *dst_row = buf_scaled;
+            int sx, sy, dx, dy;
+
+            for (sy = 0; sy < 240; sy++)
+            {
+                for (sx = 0; sx < 360; sx++)
+                {
+                    uint32_t v = src_row[sx];
+
+                    for (dy = 0; dy < Scaler_ScaleFactor; dy++)
+                    {
+                        for (dx = 0; dx < Scaler_ScaleFactor; dx++)
+                        {
+                            dst_row[dy * width + sx * Scaler_ScaleFactor + dx] = v;
+                        }
+                    }
+                }
+
+                src_row += 360;
+                dst_row += Scaler_ScaleFactor * width;
+            }
+        }
 
         if (DrawOverlay)
         {
@@ -1992,6 +2051,38 @@ void CCALL Game_save_screenshot(const char *filename)
                 src32 += 360 - Game_OverlayDisplay.ViewportWidth;
                 dst32 += (Scaler_ScaleFactor - 1) * Scaler_ScaleFactor * 360 + Scaler_ScaleFactor * (360 - Game_OverlayDisplay.ViewportWidth);
                 src2 += (Scaler_ScaleFactor - 1) * Scaler_ScaleFactor * 360 + Scaler_ScaleFactor * (360 - Game_OverlayDisplay.ViewportWidth);
+            }
+        }
+
+        // overrides the scaled output with the hi-res composite, sampled per output pixel to keep the extra detail
+        if (Draw2DOverlay)
+        {
+            int native_x, native_y, out_x, out_y;
+            const int32_t crop_w = Game_Enh2DDisplay.CropW;
+            const int32_t crop_h = Game_Enh2DDisplay.CropH;
+            const int32_t crop_off_x = Game_Enh2DDisplay.CropOffX;
+            const int32_t crop_off_y = Game_Enh2DDisplay.CropOffY;
+            const int dst_h_view = Scaler_ScaleFactor * 192;
+
+            for (out_y = 0; out_y < dst_h_view; out_y++)
+            {
+                const int comp_y = crop_off_y + (int) (((int64_t) out_y * crop_h) / dst_h_view);
+
+                native_y = out_y / Scaler_ScaleFactor;
+                dst32 = buf_scaled + out_y * width;
+
+                for (out_x = 0; out_x < width; out_x++)
+                {
+                    native_x = out_x / Scaler_ScaleFactor;
+
+                    if (screenshot_src[native_y * 360 + native_x] == Game_Enh2DDisplay.Reference[native_y * 360 + native_x])
+                    {
+                        const int comp_x = crop_off_x + (int) (((int64_t) out_x * crop_w) / width);
+
+                        dst32[out_x] = palette[Game_Enh2D_SamplePixelForScreenshot(comp_x, comp_y)];
+                    }
+                    // else: UI drawn here, not map content - leave the scaler's output alone
+                }
             }
         }
 
