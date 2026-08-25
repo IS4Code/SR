@@ -111,7 +111,7 @@ int ScalerPlugin_Startup(void)
     else if (Game_AdvancedScaler == 3) plugin_name = "./scaler-xbrz.so";
     else
     {
-        fprintf(stderr, "%s: error: %s\n", "scaler", "unknown plugin");
+        logprint("Scaler: unknown plugin.");
         return 1;
     }
 
@@ -120,7 +120,7 @@ int ScalerPlugin_Startup(void)
 
     if (SP_handle == NULL)
     {
-        fprintf(stderr, "%s: load error: %s\n", "scaler", dlerror());
+        logprintf("Scaler: load error: %s.", dlerror());
         return 2;
     }
 #endif
@@ -129,14 +129,14 @@ int ScalerPlugin_Startup(void)
 
     if (SP_initialize == NULL)
     {
-        fprintf(stderr, "%s: error: %s\n", "scaler", "initialization function not available in plugin");
+        logprint("Scaler: initialization function not available in plugin.");
         free_library(SP_handle);
         return 3;
     }
 
     if (SP_initialize(&SP_functions))
     {
-        fprintf(stderr, "%s: error: %s\n", "scaler", "failed to initialize plugin");
+        logprint("Scaler: failed to initialize plugin.");
         free_library(SP_handle);
         return 4;
     }

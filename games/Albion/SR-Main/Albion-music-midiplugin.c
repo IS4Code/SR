@@ -704,7 +704,7 @@ int MidiPlugin_Startup(void)
     else if (Game_MidiSubsystem == 4) MP_initialize = initialize_midi_plugin_fluidsynth;
     else
     {
-        fprintf(stderr, "%s: %s\n", "midi", "only the adlmidi and fluidsynth plugins are available in this build");
+        logprint("MIDI: only the adlmidi and fluidsynth plugins are available in this build.");
         return 1;
     }
 
@@ -762,7 +762,7 @@ int MidiPlugin_Startup(void)
 
     if (MP_initialize == NULL)
     {
-        fprintf(stderr, "%s: error: %s\n", "midi", "initialization function not available in plugin");
+        logprint("MIDI: initialization function not available in plugin.");
         free_library(MP_handle);
         return 3;
     }
@@ -776,7 +776,7 @@ int MidiPlugin_Startup(void)
 
     if (MP_initialize(0, &MP_parameters, &MP_functions))
     {
-        fprintf(stderr, "%s: error: %s\n", "midi", "failed to initialize plugin");
+        logprint("MIDI: failed to initialize plugin.");
         free_library(MP_handle);
         return 4;
     }
@@ -837,7 +837,7 @@ int MidiPlugin_Startup(void)
     MP_thread = SDL_CreateThread(MidiPlugin_ProcessData, "midi", NULL);
     if (MP_thread == NULL)
     {
-        fprintf(stderr, "%s: error: %s\n", "midi", "failed to create thread");
+        logprint("MIDI: failed to create thread.");
         if (temp_buf != NULL)
         {
             free(temp_buf);

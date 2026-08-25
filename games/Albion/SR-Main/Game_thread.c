@@ -53,7 +53,7 @@ int Game_Main(void)
         argv_local = (uint8_t *)x86_malloc(2 * sizeof(uint32_t) + MLEN+1);
         if (argv_local == NULL)
         {
-            fprintf(stderr, "Error: Not enough memory\n");
+            logprint("Error: Not enough memory.");
             return 1;
         }
 

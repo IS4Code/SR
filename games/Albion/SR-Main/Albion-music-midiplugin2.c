@@ -477,7 +477,7 @@ int MidiPlugin2_Startup(void)
     int index;
 
 #if defined(__EMSCRIPTEN__)
-    fprintf(stderr, "%s: %s\n", "midi", "plugin loading not supported");
+    logprint("MIDI: plugin loading not supported.");
     return 2;
 #endif
 

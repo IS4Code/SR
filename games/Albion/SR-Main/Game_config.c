@@ -66,12 +66,12 @@ void Game_ReadConfig(void)
 //    if (f == NULL) return;
     if (f == NULL)
     {
-        fprintf(stderr, "Could not open config file: %s\n", Game_ConfigFilename);
+        logprintf("Could not open config file: %s.", Game_ConfigFilename);
         return;
     }
     else
     {
-        fprintf(stderr, "Using config file: %s\n", Game_ConfigFilename);
+        logprintf("Using config file: %s.", Game_ConfigFilename);
     }
 
     while (!feof(f))

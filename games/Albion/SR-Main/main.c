@@ -1089,7 +1089,7 @@ static int Game_Initialize(void)
 
     if ( SDL_Init (SDL_INIT_VIDEO) != 0 )
     {
-        fprintf (stderr, "Error: Couldn't initialize SDL: %s\n", SDL_GetError ());
+        logprintf("Error: Couldn't initialize SDL: %s.", SDL_GetError());
         return -1;
     }
 
@@ -1104,7 +1104,7 @@ static int Game_Initialize(void)
 
     if (Game_NoCursor == NULL)
     {
-        fprintf (stderr, "Error: Couldn't create cursor: %s\n", SDL_GetError ());
+        logprintf("Error: Couldn't create cursor: %s.", SDL_GetError());
         return -2;
     }
 
@@ -1112,7 +1112,7 @@ static int Game_Initialize(void)
 
     if (Game_MinCursor == NULL)
     {
-        fprintf (stderr, "Error: Couldn't create cursor: %s\n", SDL_GetError ());
+        logprintf("Error: Couldn't create cursor: %s.", SDL_GetError());
         Game_Cleanup();
         return -2;
     }
@@ -1120,7 +1120,7 @@ static int Game_Initialize(void)
     Game_FrameBuffer = (uint8_t *) x86_malloc(360*481);
     if (Game_FrameBuffer == NULL)
     {
-        fprintf(stderr, "Error: Not enough memory\n");
+        logprint("Error: Not enough memory.");
         Game_Cleanup();
         return -3;
     }
@@ -1130,7 +1130,7 @@ static int Game_Initialize(void)
         Game_stdin = x86_malloc(3 * sizeof(void *));
         if (Game_stdin == NULL)
         {
-            fprintf(stderr, "Error: Not enough memory\n");
+            logprint("Error: Not enough memory.");
             Game_Cleanup();
             return -3;
         }
@@ -1144,7 +1144,7 @@ static int Game_Initialize(void)
         Game_ScreenViewpartOverlay[0] = (uint8_t *) x86_malloc(720*384*2);
         if (Game_ScreenViewpartOverlay[0] == NULL)
         {
-            fprintf(stderr, "Error: Not enough memory\n");
+            logprint("Error: Not enough memory.");
             Game_Cleanup();
             return -4;
         }
@@ -1153,7 +1153,7 @@ static int Game_Initialize(void)
         Game_ScreenViewpartOriginal[0] = (uint8_t *) malloc(360*192*2);
         if (Game_ScreenViewpartOriginal[0] == NULL)
         {
-            fprintf(stderr, "Error: Not enough memory\n");
+            logprint("Error: Not enough memory.");
             Game_Cleanup();
             return -4;
         }
@@ -1166,7 +1166,7 @@ static int Game_Initialize(void)
     Game_DisplaySem = SDL_CreateSemaphore(0);
     if (Game_DisplaySem == NULL)
     {
-        fprintf(stderr, "Error: Unable to create semaphore\n");
+        logprint("Error: Unable to create semaphore.");
         Game_Cleanup();
         return -5;
     }
@@ -1174,7 +1174,7 @@ static int Game_Initialize(void)
     Game_FlipSem = SDL_CreateSemaphore(0);
     if (Game_FlipSem == NULL)
     {
-        fprintf(stderr, "Error: Unable to create semaphore\n");
+        logprint("Error: Unable to create semaphore.");
         Game_Cleanup();
         return -6;
     }
@@ -1390,7 +1390,7 @@ static void Game_Event_Loop(void)
     TimerThread = SDL_CreateThread(Game_TimerThread, "timer", NULL);
     if (TimerThread == NULL)
     {
-        fprintf(stderr, "Error: Unable to start timer thread\n");
+        logprint("Error: Unable to start timer thread.");
         return;
     }
 #if defined(__EMSCRIPTEN__)
@@ -1400,7 +1400,7 @@ static void Game_Event_Loop(void)
     FlipThread = SDL_CreateThread(Game_FlipThread, "flip", NULL);
     if (FlipThread == NULL)
     {
-        fprintf(stderr, "Error: Unable to start flip thread\n");
+        logprint("Error: Unable to start flip thread.");
 
         Thread_Exited = 1;
         Thread_Exit = 1;
@@ -1418,7 +1418,7 @@ static void Game_Event_Loop(void)
     MainThread = SDL_CreateThread(Game_MainThread, "main", NULL);
     if (MainThread == NULL)
     {
-        fprintf(stderr, "Error: Unable to start main thread\n");
+        logprint("Error: Unable to start main thread.");
 
         Thread_Exited = 1;
         Thread_Exit = 1;
@@ -1797,7 +1797,7 @@ int main (int argc, char *argv[])
 {
     if (sizeof(PTR32(void)) != 4)
     {
-        fprintf(stderr, "Error: The program wasn't compiled correctly for %i-bits\n", (int) (8 * sizeof(void*)));
+        logprintf("Error: The program wasn't compiled correctly for %i-bits.", (int) (8 * sizeof(void*)));
         return 0;
     }
 

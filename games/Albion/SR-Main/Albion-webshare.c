@@ -8,6 +8,7 @@
 #include <errno.h>
 
 #include "Game_defs.h"
+#include "Game_vars.h"
 #include "Albion-webshare.h"
 #include "Albion-engine.h"
 #include "virtualfs.h"
@@ -434,7 +435,7 @@ static void Game_Share_CopyLink(const char *name, uint32_t version, uint32_t dat
     if (fd == -1 || fstat(fd, &st) != 0 || (uint32_t) st.st_size < data_offset)
     {
         if (fd != -1) close(fd);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Could not reopen the save for compression."); });
+        logprint("Could not reopen the save for compression.");
         Game_Share_DeleteTempSave();
         return;
     }
@@ -445,7 +446,7 @@ static void Game_Share_CopyLink(const char *name, uint32_t version, uint32_t dat
     close(fd);
     if (!compressed)
     {
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Brotli compression failed."); });
+        logprint("Brotli compression failed.");
         Game_Share_DeleteTempSave();
         return;
     }
@@ -477,7 +478,7 @@ static void Game_Share_CreateLink(void)
     if (fd == -1)
     {
         int err = errno;
-        MAIN_THREAD_EM_ASM({ var err = $0; if (Module.print) Module.print("Could not open the quicksave, errno " + err + "."); }, err);
+        logprintf("Could not open the quicksave, errno %d.", err);
         return;
     }
     struct stat st;
@@ -487,7 +488,7 @@ static void Game_Share_CreateLink(void)
     if (file_len < 12)
     {
         close(fd);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("The save file is too small."); });
+        logprint("The save file is too small.");
         Game_Share_DeleteTempSave();
         return;
     }
@@ -499,7 +500,7 @@ static void Game_Share_CreateLink(void)
     if (namelen > sizeof(name) - 1 || 4 + (off_t) namelen + 8 > file_len)
     {
         close(fd);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Unexpected savegame format."); });
+        logprint("Unexpected savegame format.");
         Game_Share_DeleteTempSave();
         return;
     }
@@ -512,7 +513,7 @@ static void Game_Share_CreateLink(void)
     if (magic != SHARE_SAVE_MAGIC)
     {
         close(fd);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("unexpected savegame format."); });
+        logprint("unexpected savegame format.");
         Game_Share_DeleteTempSave();
         return;
     }
@@ -540,7 +541,7 @@ void Game_QuickSave_KeyTriggered(void)
     uint16_t screen = Game_RootScreenType();
     if (screen != GAME_SCREEN_MAP_2D && screen != GAME_SCREEN_MAP_3D)
     {
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Save allowed only on 2D/3D map screen."); });
+        logprint("Save allowed only on 2D/3D map screen.");
         return;
     }
 
@@ -550,7 +551,7 @@ void Game_QuickSave_KeyTriggered(void)
     free(save_name);
     if (!saved)
     {
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Saving the game is not currently possible."); });
+        logprint("Saving the game is not currently possible.");
         return;
     }
 
@@ -587,7 +588,7 @@ void Game_Share_UnxorSaveFile(int data_offset)
     if (fd == -1)
     {
         int err = errno;
-        MAIN_THREAD_EM_ASM({ var err = $0; if (Module.print) Module.print("Could not reopen the loaded save, errno " + err + "."); }, err);
+        logprintf("Could not reopen the loaded save, errno %d.", err);
         return;
     }
     struct stat st;
@@ -597,7 +598,7 @@ void Game_Share_UnxorSaveFile(int data_offset)
 
     close(fd);
 
-    MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Shared game loaded successfully."); });
+    logprint("Shared game loaded successfully.");
 }
 
 EM_JS(uint8_t *, Game_Share_ReadLinkDataJs, (int *out_len, uint32_t magic, uint32_t version), {
@@ -677,7 +678,7 @@ void Game_Share_LoadFromLink(void)
     {
         if (fd != -1) close(fd);
         free(compressed);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Could not open the loaded save."); });
+        logprint("Could not open the loaded save.");
         return;
     }
     off_t preamble_len = st.st_size;
@@ -686,7 +687,7 @@ void Game_Share_LoadFromLink(void)
     {
         close(fd);
         free(compressed);
-        MAIN_THREAD_EM_ASM({ if (Module.print) Module.print("Could not decompress the loaded save."); });
+        logprint("Could not decompress the loaded save.");
         return;
     }
 
