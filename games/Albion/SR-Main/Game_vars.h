@@ -283,6 +283,11 @@ extern uint8_t keyboard_keys[0x80];
 
 extern int32_t errno_val;
 
+void logprint(const char *message);
+void warnprint(const char *message);
+void logprintf(const char *format, ...);
+void warnprintf(const char *format, ...);
+
 #ifdef __cplusplus
 }
 #endif

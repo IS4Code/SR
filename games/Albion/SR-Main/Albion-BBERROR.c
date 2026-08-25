@@ -23,8 +23,10 @@
  */
 
 #include "Albion-BBERROR.h"
+#include "Game_vars.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
@@ -266,11 +268,56 @@ static void ERROR_WebOutputLine(const char *message)
         message = line;
     }
 
-    MAIN_THREAD_EM_ASM({
-        var text = UTF8ToString($0);
-        if (Module.print) Module.print(text);
-        if (typeof showPanel === 'function') showPanel(true);
-    }, message);
+    warnprint(message);
 }
 #endif
+
+static int WebPrint(const char *message, int show_panel)
+{
+#if defined(__EMSCRIPTEN__)
+    return MAIN_THREAD_EM_ASM_INT({
+        if (!Module.print) return 0;
+        var text = UTF8ToString($0);
+        Module.print(text);
+        if ($1 && typeof showPanel === 'function') showPanel(true);
+        return 1;
+    }, message, show_panel);
+#else
+    return 0;
+#endif
+}
+
+void logprint(const char *message)
+{
+    if (!WebPrint(message, 0)) fprintf(stderr, "%s\n", message);
+}
+
+void warnprint(const char *message)
+{
+    if (!WebPrint(message, 1)) fprintf(stderr, "%s\n", message);
+}
+
+void logprintf(const char *format, ...)
+{
+    char buffer[512];
+    va_list args;
+
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    logprint(buffer);
+}
+
+void warnprintf(const char *format, ...)
+{
+    char buffer[512];
+    va_list args;
+
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    warnprint(buffer);
+}
 
