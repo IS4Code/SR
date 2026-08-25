@@ -249,6 +249,21 @@ typedef struct _Game_OverlayInfo
     uint32_t OverlayHeight;
 } Game_OverlayInfo;
 
+// Game_OverlayInfo analogue
+typedef struct _Game_Enh2DInfo
+{
+    int32_t Active;
+    uint8_t *Overlay;   // up to GAME_ENH2D_MAX_ZOOM_INT*360 x *192, valid area is CompW x CompH, row stride == CompW
+    uint8_t *Reference; // 360x192 - downscaled composite
+    uint8_t *Screen; // 360x192 - game thread viewport copy
+    uint8_t *Mask; // 360x192
+    int32_t CompW, CompH;       // Overlay dimensions actually written this frame (zoom rounded up to an integer grid)
+    int32_t CropW, CropH;       // footprint of the true (possibly fractional) zoom level, centered within CompW x CompH
+    int32_t CropOffX, CropOffY; // crop rect's offset within Overlay
+    int32_t SelectorActive;
+    int32_t SelectorX, SelectorY;
+} Game_Enh2DInfo;
+
 
 #pragma pack()
 

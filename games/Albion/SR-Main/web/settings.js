@@ -4,24 +4,28 @@ var Game_SettingsFields = [
     options: [['fluidsynth', 'FluidSynth'], ['adlmidi', 'ADLMIDI (OPL3)']]
   },
 
-  { key: 'Display_Enhanced_3D_Rendering', label: 'Enhanced 3D rendering', group: 'display', type: 'onoff', default: 'on' },
   {
     key: 'Display_Scaling', label: 'Scaling filter', group: 'display', type: 'select', default: 'advanced',
     options: [['advanced', 'Bilinear'], ['advancednb', 'Nearest neighbor']]
   },
+  { key: 'Display_ScaledWidth', label: 'Window width', group: 'display', type: 'number', default: '1080', min: 320 },
+  { key: 'Display_ScaledHeight', label: 'Window height', group: 'display', type: 'number', default: '720', min: 240 },
+  { key: 'Display_MouseCursorScale', label: 'Mouse cursor scale (0 = auto)', group: 'display', type: 'number', default: '0', min: 0 },
+
+  { key: 'Display_Enhanced_3D_Rendering', label: 'Enhanced 3D rendering', group: '3d', type: 'onoff', default: 'on' },
   // {
-  //   key: 'Display_AdvancedScaler', label: 'Pixel upscaler', group: 'display', type: 'select', default: 'normal',
+  //   key: 'Display_AdvancedScaler', label: 'Pixel upscaler', group: '3d', type: 'select', default: 'normal',
   //   options: [['normal', 'Nearest-neighbour'], ['hqx', 'HQx'], ['xbrz', 'xBRZ']]
   // },
   {
-    key: 'Display_ScalerFactor', label: '3D resolution factor', group: 'display', type: 'select', default: '6',
+    key: 'Display_ScalerFactor', label: 'Resolution factor', group: '3d', type: 'select', default: '6',
     options: [['max', 'Maximum'], ['2', '2x'], ['3', '3x'], ['4', '4x'], ['5', '5x'], ['6', '6x']]
   },
-  { key: 'Display_ScaledWidth', label: 'Window width', group: 'display', type: 'number', default: '1080', min: 320 },
-  { key: 'Display_ScaledHeight', label: 'Window height', group: 'display', type: 'number', default: '720', min: 240 },
-  { key: 'Display_FieldOfView', label: 'Field of view (degrees)', group: 'display', type: 'number', default: '78.19', min: 1, max: 179, step: 0.01 },
-  { key: 'Display_PitchFovCompensation', label: 'Pitch FOV compensation', group: 'display', type: 'onoff', default: 'on' },
-  { key: 'Display_MouseCursorScale', label: 'Mouse cursor scale (0 = auto)', group: 'display', type: 'number', default: '0', min: 0 },
+  { key: 'Display_FieldOfView', label: 'Field of view (degrees)', group: '3d', type: 'number', default: '78.19', min: 1, max: 179, step: 0.01 },
+  { key: 'Display_PitchFovCompensation', label: 'Pitch FOV compensation', group: '3d', type: 'onoff', default: 'on' },
+
+  { key: 'Display_Enhanced_2D_Rendering', label: 'Enhanced 2D rendering', group: '2d', type: 'onoff', default: 'on' },
+  { key: 'Display_2DZoomFactor', label: 'Resolution factor', group: '2d', type: 'number', default: '2', min: 0.5, max: 4, step: 0.25 },
 
   { key: 'Mouse_Look', label: 'Mouse look', group: 'mouse', type: 'yesno', default: 'yes', phoneDefault: 'no' },
   { key: 'Mouse_LookSensitivity', label: 'Mouse look sensitivity (%)', group: 'mouse', type: 'number', default: '100', min: 1 },
@@ -207,8 +211,8 @@ window.Game_SaveSetupOptions = function (payload) {
   });
 };
 
-var Game_SettingsGroupLabels = { language: 'Language', audio: 'Audio', display: 'Display', mouse: 'Mouse look', game: 'Game tweaks' };
-var Game_SettingsGroupOrder = ['language', 'audio', 'display', 'mouse', 'game'];
+var Game_SettingsGroupLabels = { language: 'Language', audio: 'Audio', display: 'Display', '3d': '3D', '2d': '2D', mouse: 'Mouse look', game: 'Game tweaks' };
+var Game_SettingsGroupOrder = ['language', 'audio', 'display', '3d', '2d', 'mouse', 'game'];
 
 function Game_BuildFieldRow(field, params) {
   var row = document.createElement('label');

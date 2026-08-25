@@ -27,6 +27,7 @@
 #include "Game_vars.h"
 #include "Albion-int2.h"
 #include "Albion-int3.h"
+#include "Albion-2dengine.h"
 #include "Game_thread.h"
 #include "Game-int2.h"
 
@@ -235,6 +236,9 @@ uint32_t CCALL Game_int386x(
                         }
 
                         Game_DisplayStart = DX;
+
+                        Game_Enh2D_Snapshot();
+
                         EAX = 0x004f;	// VESA OK
 
                         /*memcpy(&(Game_FrameBuffer[Game_ScreenWindowNum << 16]), Game_ScreenWindow, (Game_ScreenWindowNum == 2)?41728:65536);*/

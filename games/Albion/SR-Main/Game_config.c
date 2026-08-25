@@ -27,6 +27,7 @@
 #include "Game_defs.h"
 #include "Game_vars.h"
 #include "Game_config.h"
+#include "Albion-engine.h"
 #include "main.h"
 #include "display.h"
 #include "audio.h"
@@ -462,6 +463,26 @@ void Game_ReadConfig(void)
                 else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
                 {
                     Game_PitchFovCompensation = 0;
+                }
+            }
+            else if ( strcasecmp(str, "2DZoomFactor") == 0 ) // str equals "2DZoomFactor"
+            {
+                num_double = 0.0;
+                sscanf(param, "%lf", &num_double);
+                if (num_double >= GAME_2DZOOM_MIN)
+                {
+                    Game_2DZoomFactor = num_double;
+                }
+            }
+            else if ( strcasecmp(str, "Enhanced_2D_Rendering") == 0 ) // str equals "Enhanced_2D_Rendering"
+            {
+                if ( strcasecmp(param, "on") == 0 ) // param equals "on"
+                {
+                    Game_Enh2D_HiresEnabled = 1;
+                }
+                else if ( strcasecmp(param, "off") == 0 ) // param equals "off"
+                {
+                    Game_Enh2D_HiresEnabled = 0;
                 }
             }
             else if ( strcasecmp(str, "TileCullNearTolerance") == 0 ) // str equals "TileCullNearTolerance"

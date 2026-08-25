@@ -148,3 +148,5 @@ loc_ABDB2,SR_int386x
 loc_81F19,SR__vbprintf
 
 loc_95130,SR__splitpath
+
+loc_13F1C,Game_Enh2D_SelectDraw_proc

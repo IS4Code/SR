@@ -53,6 +53,12 @@
     %define Game_UseEnhanced3DEngine _Game_UseEnhanced3DEngine
     %define Game_ScreenshotEnabled _Game_ScreenshotEnabled
     %define Game_ScreenshotAutomaticFilename _Game_ScreenshotAutomaticFilename
+
+    %define Set_3DM_WindowSize_Core _Set_3DM_WindowSize_Core
+    %define Set_3DM_AspectRatio_Core _Set_3DM_AspectRatio_Core
+    %define Init_3DM_Core _Init_3DM_Core
+
+    %define Game_Enh2D_SelectArea _Game_Enh2D_SelectArea
 %endif
 
 extern Game_ScreenWindow
@@ -89,6 +95,21 @@ extern draw_3dscene_proc
 extern Game_UseEnhanced3DEngine
 extern Game_ScreenshotEnabled
 extern Game_ScreenshotAutomaticFilename
+
+extern Set_3DM_ViewDepth_proc
+extern Set_3DM_ShadeTable_proc
+extern Set_3DM_SquareSize_proc
+extern Init_3DM_SkyTable_Core_proc
+extern Set_3DM_WindowSize_Core
+extern Set_3DM_AspectRatio_Core
+extern Init_3DM_Core
+
+extern Game_Enh2D_BeginFrame_proc
+extern Game_Enh2D_BeginQuadrants_proc
+extern Game_Enh2D_NextTile_proc
+extern Game_Enh2D_Finish_proc
+extern Game_Enh2D_SelectDraw_proc
+extern Game_Enh2D_SelectArea
 
 extern SR_Call_Asm_Float1
 

@@ -24,6 +24,7 @@
 
 #include "../Game_defs.h"
 #include "../Game_vars.h"
+#include "../Albion-engine.h"
 #include "palette32bgra.h"
 #include "overlay.h"
 #include <memory.h>
@@ -68,6 +69,130 @@ static void Blit_Paletted(uint32_t *dst, const uint8_t *src, uint32_t count, con
         src++;
         dst++;
         count--;
+    }
+}
+
+extern uint8_t loc_17D95C[256]; // &Recolour_tables[7][0]
+extern uint8_t loc_13B726[]; // Select_2D_cursor
+
+static uint8_t SamplePixel_2D(const Game_Enh2DInfo *snap, int comp_x, int comp_y)
+{
+    uint8_t base = snap->Overlay[comp_y * snap->CompW + comp_x];
+
+    if (snap->SelectorActive)
+    {
+        int lx = comp_x - snap->SelectorX;
+        int ly = comp_y - snap->SelectorY;
+
+        // Put_masked_block(&Main_OPM, X - 1, Y - 1, 18, 18, Select_2D_cursor);
+        if ((lx >= -1) && (lx < 17) && (ly >= -1) && (ly < 17))
+        {
+            uint8_t p = loc_13B726[(ly + 1) * 18 + (lx + 1)];
+            if (p != 0) return p;
+        }
+
+        // Put_recoloured_box(&Main_OPM, X, Y, 16, 16, &Recolour_tables[7][0]);
+        if ((lx >= 0) && (lx < 16) && (ly >= 0) && (ly < 16))
+        {
+            return loc_17D95C[base];
+        }
+    }
+
+    return base;
+}
+
+// DrawOverlay analogue, for the whole 360x192 screen
+static int SnapshotReady_2D(void)
+{
+    const uint32_t i = __atomic_load_n(&Game_Enh2DSnapshotIndex, __ATOMIC_ACQUIRE) % GAME_ENH2D_SLOTS;
+    const Game_Enh2DInfo *const s = &Game_Enh2DSnapshot[i];
+
+    return s->Active && (s->Overlay != NULL) && (s->Screen != NULL) && (s->Mask != NULL);
+}
+
+static void Flip_2D_composite(uint32_t *dst1, uint32_t *dst2)
+{
+    // load snapshot, written from the game thread
+    const uint32_t snap_idx = __atomic_load_n(&Game_Enh2DSnapshotIndex, __ATOMIC_ACQUIRE) % GAME_ENH2D_SLOTS;
+    const Game_Enh2DInfo snap = Game_Enh2DSnapshot[snap_idx];
+    const uint8_t *mask = snap.Mask; // 360x192
+    const uint8_t *const src = snap.Screen;
+
+    // mask out Game_PaletteAlpha pixels if unchanged
+    for (int y = 0; y < 192; y++)
+    {
+        for (int x = 0; x < 360; x++)
+        {
+            const int i = y * 360 + x;
+
+            dst1[i] = mask[i] ? Game_PaletteAlpha[src[i]].pix : 0;
+        }
+    }
+
+    // UI
+    const uint8_t *s = src + 360 * 192;
+    uint32_t *d = dst1 + 360 * 192;
+    for (int counter = 360 * (240 - 192); counter != 0; counter--)
+    {
+        d[0] = Game_PaletteAlpha[s[0]].pix;
+        s++;
+        d++;
+    }
+
+    // resamples the crop rect into the scaled viewport
+    const int crop_w = snap.CropW;
+    const int crop_h = snap.CropH;
+    const int crop_off_x = snap.CropOffX;
+    const int crop_off_y = snap.CropOffY;
+    int dst_w = Scaler_ScaleFactor * 360;
+    int dst_h_total = Scaler_ScaleFactor * 240;
+    int dst_h_view = Scaler_ScaleFactor * 192;
+    int xdelta = (crop_w << 16) / dst_w;
+    int ydelta = (crop_h << 16) / dst_h_view;
+    int xpos = 0;
+    int ypos = 0;
+
+    for (int y = 0; y < dst_h_total; y++)
+    {
+        int local_y, comp_y, view_y, in_viewport;
+
+        if (y >= dst_h_view)
+        {
+            for (int x = 0; x < dst_w; x++)
+            {
+                dst2[y * dst_w + x] = 0;
+            }
+            continue;
+        }
+
+        local_y = ypos >> 16;
+        comp_y = crop_off_y + local_y;
+        view_y = (int) (((int64_t) local_y * 192) / crop_h);
+        in_viewport = (local_y < crop_h) && (view_y < 192);
+
+        xpos = 0;
+        for (int x = 0; x < dst_w; x++)
+        {
+            int local_x = xpos >> 16;
+            int comp_x = crop_off_x + local_x;
+            int show = 0;
+
+            if (in_viewport && (local_x < crop_w))
+            {
+                int view_x = (int) (((int64_t) local_x * 360) / crop_w);
+
+                if ((view_x < 360) && (dst1[view_y * 360 + view_x] == 0))
+                {
+                    show = 1;
+                }
+            }
+
+            dst2[y * dst_w + x] = show ? Game_PaletteAlpha[SamplePixel_2D(&snap, comp_x, comp_y)].pix : 0;
+
+            xpos += xdelta;
+        }
+
+        ypos += ydelta;
     }
 }
 
@@ -370,6 +495,11 @@ static void Flip_360x240x8_to_360x240x32_advanced(uint8_t *src, uint32_t *dst1, 
                 dst2 += Scaler_ScaleFactor * 352;
             }
         }
+    }
+    else if (Game_Enh2D_HiresEnabled && SnapshotReady_2D() && Game_SceneVisible(GAME_SCREEN_MAP_2D))
+    {
+        *dst2_used = 1;
+        Flip_2D_composite(dst1, dst2);
     }
     else
     {

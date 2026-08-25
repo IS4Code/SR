@@ -53,6 +53,7 @@ funcv Game_FloatProcSinCos *ValuePtr
 func Set_3DM_WindowSize_Core width, height
 func Set_3DM_AspectRatio_Core ratio
 func Init_3DM_Core
+func Game_Enh2D_NextTile
 
 proc draw_3dscene_proc external
 proc Set_3DM_ViewDepth_proc external
@@ -62,6 +63,23 @@ proc Init_3DM_SkyTable_Core_proc external
 extern Game_UseEnhanced3DEngine
 extern Game_ScreenshotEnabled
 extern Game_ScreenshotAutomaticFilename
+
+proc Game_Enh2D_BeginFrame_proc external
+proc Game_Enh2D_BeginQuadrants_proc external
+proc Game_Enh2D_Finish_proc external
+proc Game_Enh2D_SelectDraw_proc external
+extern Game_SyntheticQuadrantPass
+extern Game_Enh2D_TrueCallerAddr
+extern Game_Enh2D_SuppressScrollDraw
+extern Game_Enh2D_CompositeActive
+funcv Game_Enh2D_SelectArea
+extern Game_Enh2D_SelX
+extern Game_Enh2D_SelY
+extern Game_Enh2D_SelW
+extern Game_Enh2D_SelH
+funcv Game_Enh2D_PartyBox big
+extern Game_Enh2D_PartyBoxW
+extern Game_Enh2D_PartyBoxH
 
 funcv Game_QuickSave_KeyTriggered
 
