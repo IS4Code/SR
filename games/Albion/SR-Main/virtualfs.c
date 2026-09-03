@@ -749,13 +749,24 @@ file_entry *vfs_set_current_dir(const char *newdir)
 
 #include <emscripten.h>
 
-EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len), {
+static char vfs_data_root[64] = "data/";
+
+EMSCRIPTEN_KEEPALIVE
+void vfs_set_data_root(const char *root)
+{
+    strncpy(vfs_data_root, root, sizeof(vfs_data_root) - 1);
+    vfs_data_root[sizeof(vfs_data_root) - 1] = 0;
+}
+
+EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len, const char *data_root), {
     setValue(out_len, 0, "i32");
 
     // normalize for / root
     var path = UTF8ToString(filepath);
     if (path.startsWith("./")) path = path.substring(2);
     else if (path.startsWith("/")) path = path.substring(1);
+
+    var root = UTF8ToString(data_root);
 
     var manifest = Module.GameManifest;
     if (!manifest)
@@ -765,7 +776,7 @@ EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len), 
         try
         {
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "data/manifest.json", false);
+            xhr.open("GET", root + "manifest.json", false);
             xhr.responseType = "json";
             xhr.send();
             if (xhr.status === 200)
@@ -802,7 +813,7 @@ EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len), 
     try
     {
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "data/" + path, false);
+        xhr.open("GET", root + path, false);
         
         if (Module.ENVIRONMENT_IS_PTHREAD)
         {
@@ -854,7 +865,7 @@ EM_JS(void *, vfs_fetch_js, (const char *filepath, int is_write, int *out_len), 
 void vfs_fetch(const char *filepath, int is_write)
 {
     int len = 0;
-    void *buf = vfs_fetch_js(filepath, is_write, &len);
+    void *buf = vfs_fetch_js(filepath, is_write, &len, vfs_data_root);
     if (buf == NULL)
     {
         // does not exist

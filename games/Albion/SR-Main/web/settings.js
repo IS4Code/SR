@@ -42,7 +42,7 @@ var Game_PhoneOnlyOverrides = { Display_MouseCursor: 'none', Display_ScalerFacto
 
 var Game_LanguageField = {
   key: 'Language', label: 'Game language', group: 'language', type: 'select', default: 'ENGLISH',
-  options: [['GERMAN', 'German'], ['ENGLISH', 'English'], ['FRENCH', 'French']],
+  options: [['GERMAN', 'German'], ['ENGLISH', 'English'], ['FRENCH', 'French'], ['CZECH', 'Czech']],
   cookieName: 'alb_lang', isLanguage: true
 };
 
@@ -50,6 +50,19 @@ var Game_LanguageNumbers = { GERMAN: 1, ENGLISH: 2, FRENCH: 3 };
 function Game_LanguageToNumber(lang) {
   var n = Game_LanguageNumbers[String(lang).toUpperCase()];
   return n ? n : 2;
+}
+
+function Game_GetEffectiveLanguage() {
+  var lang = Game_FieldUriValue(Game_LanguageField, Game_ParseFragmentParams());
+  if (lang == null) lang = Game_GetCookie(Game_FieldCookieName(Game_LanguageField));
+  return lang != null ? String(lang).toUpperCase() : Game_LanguageField.default;
+}
+
+function Game_GetDataRoot() {
+  var lang = Game_GetEffectiveLanguage();
+  if (Game_LanguageNumbers.hasOwnProperty(lang)) return 'data/';
+  if (!/^[A-Z0-9_]+$/.test(lang)) return 'data/';
+  return 'data/' + lang + '/';
 }
 
 function Game_GetCookie(name) {

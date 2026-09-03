@@ -47,8 +47,10 @@ if (!Module.ENVIRONMENT_IS_PTHREAD)
     Module.preRun.push(function () {
         var dependency = 'game-manifest';
         addRunDependency(dependency);
-    
-        fetch("data/manifest.json").then(function (response) {
+
+        var dataRoot = (typeof Game_GetDataRoot === 'function') ? Game_GetDataRoot() : "data/";
+
+        fetch(dataRoot + "manifest.json").then(function (response) {
             if (!response.ok)
             {
                 throw new Error(response.status);

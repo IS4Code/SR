@@ -31,6 +31,17 @@ function Game_MaybeStartGame()
     }
     try
     {
+      if (typeof Game_GetDataRoot === 'function' && Module.ccall)
+      {
+        Module.ccall("vfs_set_data_root", null, ["string"], [Game_GetDataRoot()]);
+      }
+    }
+    catch (e)
+    {
+      console.error("Data root override failed: " + e);
+    }
+    try
+    {
       if (typeof Game_Share_PatchSetup === 'function') Game_Share_PatchSetup();
     }
     catch (e)
